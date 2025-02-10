@@ -1,0 +1,215 @@
+0. SPEED UP:
+    - interpolate directly back to input instead of going the long way through the network?
+
+1. Adding Support for More Layers
+	•	CNNs: Convolutional layers (Conv1d, Conv2d, Conv3d), BatchNorm, and pooling layers.
+	•	Transformers: Multi-head attention (nn.MultiheadAttention), feedforward layers, positional encodings.
+	•	Other Potential Layers: Dropout (nn.Dropout), normalization layers (LayerNorm), and residual connections.
+
+For each, we need to:
+	•	Identify how feature importance should be propagated.
+	•	Define custom backpropagation rules (e.g., handling attention weights in transformers).
+
+2. Implementing Two Modes
+	•	Mode A: Live View with Uncertainty Estimation
+	•	    While training, continuously compute feature importances.
+	•	    Use Monte Carlo dropout or Bayesian methods to estimate uncertainty.
+	•	    Visualize stability of the ranking over iterations.
+    •	    Bayesian Updating über die Activations
+
+	•	Mode B: Post-Hoc Analysis
+	•	    Keep the current approach but extend it to new layers.
+	•	    Make it efficient so it scales to large datasets and models.
+
+3. Estimating uncertainty:
+    •	    Gaussian Process (GP) Over Feature Importance for Uncertainty Estimation
+
+4. Keep Live overview of feature ranking:
+    •	    bayesian updating of feature importance (updating the posterior based on new feature importance from news samples)
+    •	    INV variante 
+    •       Variance of feature rankings across different mini-batches.
+    •	    Confidence intervals for feature importances.
+
+
+3. Live View with Uncertainty Estimation
+	•	Key Challenges:
+	•	Efficiently updating feature rankings without slowing down training too much.
+	•	Defining a stopping criterion for convergence (e.g., when rankings stabilize).
+	•	Handling different network architectures in a generic way.
+	•	Possible Metrics for Stability:
+	•	Rank correlation over time (e.g., Spearman’s rank correlation).
+	•	Variance of feature rankings across different mini-batches.
+	•	Confidence intervals for feature importances.
+
+
+
+
+
+##########################################
+
+1. Why Use Gaussian Processes for Feature Importance?
+	•	Non-parametric: GPs do not assume a fixed functional form and instead model feature importance flexibly.
+	•	Uncertainty estimation: GPs naturally provide both mean estimates and variance estimates, making them ideal for indicating when feature importance rankings are stable.
+	•	Smoothness assumption: GPs assume similar inputs lead to similar outputs, making them useful for modeling feature dependencies.
+
+
+
+    2. How Does it Work?
+	1.	Collect Feature Importance Scores
+	•	Run the feature importance method multiple times (e.g., over different training epochs, bootstrapped samples, or different models).
+	•	Let  \mathbf{X}  be the set of features, and  \mathbf{y}  be their importance scores over multiple runs.
+	2.	Fit a Gaussian Process to Model the Importance Scores
+	•	Assume the feature importance values are drawn from a Gaussian Process:
+
+y_i = f(x_i) + \epsilon, \quad \epsilon \sim \mathcal{N}(0, \sigma^2)
+
+	•	The GP learns a distribution over possible functions that fit the feature importance data.
+	3.	Define a Kernel Function
+	•	The kernel encodes assumptions about the smoothness of the feature importance function.
+	•	A common choice is the Radial Basis Function (RBF) kernel:
+
+k(x, x{\prime}) = \exp\left(-\frac{||x - x{\prime}||^2}{2l^2}\right)
+
+where  l  is a length scale hyperparameter.
+	4.	Compute Predictive Mean and Variance
+	•	The GP provides a posterior mean  \mu(x)  (expected feature importance) and variance  \sigma^2(x)  (uncertainty in feature importance).
+	•	The uncertainty estimate  \sigma^2(x)  tells us how stable the feature ranking is.
+	•	High variance means the feature importance is uncertain; low variance means the ranking is stable.
+	5.	Decision Criterion for Stopping
+	•	If the uncertainty (variance) of the top-ranked features is below a threshold, the ranking has converged.
+	•	If the variance is high, the model may need more training data or further iterations.
+
+
+    Step 1: Collect Feature Importance Scores
+
+You need multiple samples of feature importance values. If you use an LSTM, CNN, or Transformer model, you can:
+	•	Compute importance scores at different training epochs.
+	•	Use different training subsets (e.g., bootstrap sampling).
+	•	Use different model initializations (deep ensembles).
+
+Example dataset:
+Use sklearn.gaussian_process.GaussianProcessRegressor:
+Step 3: Compute Predictive Mean and Variance
+
+After fitting the GP, compute predictive distributions:
+
+Step 4: Stopping Criterion for Stability
+
+If the standard deviation (uncertainty) of the top-ranked features is low, we can stop training:
+
+
+6. Next Steps
+
+To integrate this into your feature ranking framework:
+	1.	Collect importance scores over multiple runs (e.g., epochs, bootstraps, or model ensembles).
+	2.	Fit a GP to predict feature importance distributions.
+	3.	Use predictive variance to decide when to stop training.
+	4.	Extend to CNNs, Transformers, etc. by applying the same methodology to their importance scores.
+
+
+
+
+Ziele:
+
+1. Uncertainty live wiedergeben
+2. Schnellere Berechnung der Feature Importance für live Mitschnitt 
+3. Bayesian Updating der Feature Importance across samples (alternative für INV)
+4. Modus für Post-Hoc Analyse und Modus für Live Analyse
+5. Stopping Criterion für Konvergenz der Feature Importance
+6. Bayesian? Gaussian Process? für Unsicherheitsschätzung?
+7. Optimierung der Berechnung der Feature Importance durch Bayesian Updating?
+
+
+8. INfrastruktur: 
+    - Model Interface
+    - Feature Importance Method Interface
+    - Training Interface
+    - Validation Interface
+    - Bayesian Updating Interface
+    - Live View Interface
+    - Post-Hoc Analysis Interface
+    - Stopping Criterion Interface
+    - Gaussian Process Interface
+    - Bayesian Interface
+    - 
+
+
+
+
+
+
+
+    ###############################################
+    ###############################################
+
+
+    🔹 Finalisierte Struktur deines Plans
+
+0. SPEED UP & OPTIMIZATION
+	•	Direkte Interpolation zurück auf die Input-Ebene, um unnötige Backpropagation über viele Layers zu vermeiden.
+	•	Schnellere Unsicherheitsabschätzung durch Approximationen anstelle vollständiger probabilistischer Methoden.
+
+
+ 1. Unterstützung für Weitere Layer
+	•	CNNs: Convolutional Schichten (Conv1d, Conv2d, Conv3d), Pooling, BatchNorm.
+	•	Transformers: Multi-Head Attention (nn.MultiheadAttention), Feedforward Layers, Positional Encodings.
+	•	Weitere Layer: Dropout, LayerNorm, Residual Connections.
+
+Schritte für jede neue Layer-Art:
+	1.	Wie wird Feature-Importance propagiert?
+	2.	Backpropagation-Regeln definieren (z. B. Umgang mit Attention-Gewichten in Transformers).   
+
+
+2. Zwei Analyse-Modi
+
+🔹 Mode A: Live View mit Unsicherheitsabschätzung
+	•	Während des Trainings kontinuierlich Feature-Importances berechnen.
+	•	Monte-Carlo Dropout oder Bayesian Methods für Unsicherheitsabschätzung.
+	•	Stabilität der Rankings visualisieren (Konvergenzkriterium).
+	•	Bayesian Updating über die Activations für fortlaufende Feature Importance Updates.
+
+🔹 Mode B: Post-Hoc Analyse
+	•	Beibehaltung der aktuellen Methode, aber Erweiterung auf neue Layer-Typen.
+	•	Effizienzverbesserung, damit große Modelle/Daten verarbeitet werden können.
+
+
+
+3. Unsicherheitsabschätzung für Feature-Importance
+	•	Gaussian Process (GP) Over Feature Importance für stetige Unsicherheitsmodellierung.
+	•	Bayesian Updating: Update der Feature-Importances basierend auf neuen Samples (statt nur einmaliger Berechnung).
+	•	Variance-based Confidence Intervals für Feature-Importances.
+
+
+4. Live View für Feature Ranking mit Unsicherheit
+	•	Wichtige Metriken für Stabilität & Unsicherheit:
+	•	Bayesian Updating für kontinuierliche Feature-Importance-Updates.
+	•	INV-Variante als Alternative zur klassischen Unsicherheitsberechnung.
+	•	Varianz der Feature-Rankings über verschiedene Mini-Batches.
+	•	Konfidenzintervalle für Feature-Importances.
+	•	Spearman’s Rank Correlation über Zeit, um Stabilität des Rankings zu messen.
+	•	Definieren eines Stopping-Kriteriums für Feature-Importance-Kovergenz:
+	•	Falls die Varianz gering ist, ist das Ranking stabil und das Training kann gestoppt werden.
+	•	Falls hohe Varianz, sind weitere Trainingsiterationen oder Daten erforderlich.
+
+
+
+5. Gaussian Process für Feature-Importance Unsicherheitsabschätzung
+	•	Warum Gaussian Processes?
+✅ Non-parametrisch, flexibles Modell für Feature-Importance.
+✅ Natürliches Unsicherheitsmodell (Mean & Variance).
+✅ Glättung und Abbildung von Abhängigkeiten zwischen Features.
+	•	Wie funktioniert es?
+	1.	Feature-Importance-Werte über mehrere Iterationen sammeln.
+	2.	Gaussian Process trainieren, um Feature-Importance-Werte zu modellieren.
+	3.	Kernel-Funktion wählen (z. B. RBF-Kernel für Glättung).
+	4.	Predictive Mean & Variance berechnen (Feature Importance + Unsicherheit).
+	5.	Stopping-Kriterium basierend auf Konvergenz der Feature-Rankings anwenden.
+
+
+
+6. Umsetzung in deinem Framework
+
+✅ Integration von Unsicherheitsabschätzung in AutoDeepACTIF.
+✅ Unterstützung für CNNs, Transformers, etc.
+✅ Live-Visualisierung für Nutzer (Echtzeit-Feature-Rankings mit Unsicherheit).
+✅ Anpassung für große Datensätze & Modelle.
