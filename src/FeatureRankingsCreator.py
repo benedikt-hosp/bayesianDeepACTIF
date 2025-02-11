@@ -57,6 +57,7 @@ class PyTorchModelWrapper_SHAP:
 
 class FeatureRankingsCreator:
     def __init__(self, modelName, datasetName, dataset, trainer, paths, device):
+        self.live_vis = None
         self.modelName = modelName
         self.paths = paths
         self.device = device
@@ -185,8 +186,8 @@ class FeatureRankingsCreator:
             # Erzeuge (oder hole) die Singleton-Instanz:
             self.bayes_analyzer = BayesianFeatureImportance(self.trainer.model, features=self.selected_features, device=self.device)
             # Angenommen, trainer.model und selected_features sind bereits definiert.
-            # self.live_vis = LiveVisualizer(self.selected_features, update_interval=10)
-            # self.bayes_analyzer.live_visualizer = self.live_vis
+            self.live_vis = LiveVisualizer(self.selected_features, update_interval=10)
+            self.bayes_analyzer.live_visualizer = self.live_vis
 
         for i, test_subject in enumerate(self.subject_list):
             # if i > 2:
@@ -1233,6 +1234,32 @@ class FeatureRankingsCreator:
         self.feature_importance_results[method] = sorted_importances
         return sorted_importances
 
+    # def sort_importances_based_on_attribution(self, aggregated_importances, method):
+    #     # Falls aggregated_importances eine Liste ist, in DataFrame umwandeln:
+    #     if isinstance(aggregated_importances, list):
+    #         aggregated_importances = pd.DataFrame(aggregated_importances)
+    #
+    #     # Prüfe, ob der DataFrame leer ist:
+    #     if aggregated_importances.empty:
+    #         raise ValueError(f"No feature importances found for method {method}")
+    #
+    #     # Wenn bereits so viele Zeilen vorhanden sind wie Features,
+    #     # gehen wir davon aus, dass die Ergebnisse bereits aggregiert sind.
+    #     if aggregated_importances.shape[0] == len(self.selected_features):
+    #         # Wir sortieren einfach nach der Spalte 'attribution'
+    #         sorted_importances = aggregated_importances.sort_values(by="attribution", ascending=False)
+    #     else:
+    #         # Andernfalls prüfen wir, ob die erwarteten Spalten vorhanden sind.
+    #         if 'feature' not in aggregated_importances.columns or 'attribution' not in aggregated_importances.columns:
+    #             raise KeyError("The DataFrame does not contain the required 'feature' and 'attribution' columns.")
+    #         # Gruppiere über die 'feature'-Spalte und bilde den Mittelwert
+    #         mean_importances = aggregated_importances.groupby('feature')['attribution'].mean().reset_index()
+    #         sorted_importances = mean_importances.sort_values(by='attribution', ascending=False)
+    #
+    #     self.save_importances_in_file(mean_importances_sorted=sorted_importances, method=method)
+    #     self.feature_importance_results[method] = sorted_importances
+    #     return sorted_importances
+
     def save_importances_in_file(self, mean_importances_sorted, method):
         filename = f"{self.paths['results_folder_path']}/{method}.csv"
         mean_importances_sorted.to_csv(filename, index=False)
@@ -1372,15 +1399,15 @@ class FeatureRankingsCreator:
         return results
 
     def compute_bayesACTIF(self, valid_loader):
-        # Example Usage:
+        # # Example Usage:
         device = "cuda" if torch.cuda.is_available() else "mps" if torch.backends.mps.is_available() else "cpu"
-
-        # # Führe die Analyse mit Live-Visualisierung durch:
-        # subject_importances = self.bayes_analyzer.analyze(valid_loader, device, return_raw=True, live_visualizer=live_vis,
-        #                                              update_interval=5)
-        # print("Final subject importances shape:", subject_importances.shape)
         #
-        # # Hier kannst du noch weitere Aggregationen vornehmen, z.B.:
+        # # # Führe die Analyse mit Live-Visualisierung durch:
+        # subject_importances = self.bayes_analyzer.analyze(valid_loader, return_raw=True), #live_visualizer=None,
+        #                                              #update_interval=5)
+        # print("Final subject importances shape:", subject_importances)
+
+        # Hier kannst du noch weitere Aggregationen vornehmen, z.B.:
         # aggregated = subject_importances.mean(dim=1)  # (num_samples, num_features)
         # uncertainty = subject_importances.std(dim=1)  # (num_samples, num_features)
         #
@@ -1397,6 +1424,7 @@ class FeatureRankingsCreator:
         # live_vis.update(raw_importances, aggregated_importance, uncertainty, sample_idx, iteration)
         # time.sleep(0.1)  # Simuliere Wartezeit zwischen Updates
 
+
         # Version 1:
         # Annahme: trainer.model und selected_features sind bereits definiert.
         analyzer = BayesianFeatureImportance(model=self.trainer.model, features=self.selected_features, device=device,
@@ -1406,14 +1434,16 @@ class FeatureRankingsCreator:
         # bayesian_results = analyzer.compute_bayesACTIF(valid_loader)
         # print("Final Bayesian Results:")
         # print(bayesian_results)
-        bayesian_results = analyzer.compute_bayesACTIF(valid_loader)
+        subject_results = analyzer.compute_bayesACTIF(valid_loader)
 
         # Am Ende kannst du die finalen Priorwerte abrufen:
         final_mu, final_sigma = self.bayes_analyzer.mu_prior, self.bayes_analyzer.sigma_prior
         print("Final Bayesian mu_prior:", final_mu)
         print("Final Bayesian sigma_prior:", final_sigma)
 
-        return bayesian_results
+        aggregated_importances = pd.DataFrame(subject_results)
+
+        return aggregated_importances
 
     def convert_aggregated_to_dataframe(self, aggregated_importances, selected_features):
         """

@@ -31,36 +31,36 @@ class LiveVisualizer:
             selected_features (list): Liste der Feature-Namen.
             update_interval (int): Aktualisierungsintervall (z. B. alle n Iterationen).
         """
-        self.selected_features = selected_features
-        self.update_interval = update_interval
-
-        # Erstelle einmalig die Figure und Achsen
-        plt.ion()  # Interaktiver Modus
-        self.fig, self.axs = plt.subplots(1, 2, figsize=(12, 6))
-        self.fig.suptitle("Live Visualization of Feature Importances")
-
-        # Linker Plot: Heatmap für raw Importances
-        self.axs[0].set_xlabel("Features")
-        self.axs[0].set_ylabel("Timesteps")
-        self.axs[0].set_title("Raw Importances")
-        self.im = self.axs[0].imshow(np.zeros((1, len(selected_features))), aspect='auto', cmap='viridis')
-        self.fig.colorbar(self.im, ax=self.axs[0])
-
-        # Rechter Plot: Balkendiagramm für aggregierte Importance
-        self.axs[1].set_title("Aggregated Importance")
-        self.axs[1].set_ylabel("Importance")
-        self.bar_container = self.axs[1].bar(range(len(selected_features)), np.zeros(len(selected_features)))
-        self.axs[1].set_xticks(range(len(selected_features)))
-        self.axs[1].set_xticklabels(selected_features, rotation=45, ha='right')
-
-        plt.show()
-
-        # Queue für Daten, die vom Hauptthread an den Visualizer-Thread übergeben werden
-        self.data_queue = queue.Queue()
-
-        # Starte den Update-Thread als Daemon
-        self.thread = threading.Thread(target=self._run, daemon=True)
-        self.thread.start()
+        # self.selected_features = selected_features
+        # self.update_interval = update_interval
+        #
+        # # Erstelle einmalig die Figure und Achsen
+        # plt.ion()  # Interaktiver Modus
+        # self.fig, self.axs = plt.subplots(1, 2, figsize=(12, 6))
+        # self.fig.suptitle("Live Visualization of Feature Importances")
+        #
+        # # Linker Plot: Heatmap für raw Importances
+        # self.axs[0].set_xlabel("Features")
+        # self.axs[0].set_ylabel("Timesteps")
+        # self.axs[0].set_title("Raw Importances")
+        # self.im = self.axs[0].imshow(np.zeros((1, len(selected_features))), aspect='auto', cmap='viridis')
+        # self.fig.colorbar(self.im, ax=self.axs[0])
+        #
+        # # Rechter Plot: Balkendiagramm für aggregierte Importance
+        # self.axs[1].set_title("Aggregated Importance")
+        # self.axs[1].set_ylabel("Importance")
+        # self.bar_container = self.axs[1].bar(range(len(selected_features)), np.zeros(len(selected_features)))
+        # self.axs[1].set_xticks(range(len(selected_features)))
+        # self.axs[1].set_xticklabels(selected_features, rotation=45, ha='right')
+        #
+        # plt.show()
+        #
+        # # Queue für Daten, die vom Hauptthread an den Visualizer-Thread übergeben werden
+        # self.data_queue = queue.Queue()
+        #
+        # # Starte den Update-Thread als Daemon
+        # self.thread = threading.Thread(target=self._run, daemon=True)
+        # self.thread.start()
 
     def _run(self):
         """Endlosschleife, die die Queue abarbeitet und den Plot aktualisiert."""
@@ -108,10 +108,10 @@ class LiveVisualizer:
             sample_idx (int): Welcher Sample angezeigt werden soll.
             iteration (int): Aktuelle Iteration (nur alle update_interval Iterationen wird aktualisiert).
         """
-        if iteration % self.update_interval != 0:
-            return
+        # if iteration % self.update_interval != 0:
+        #     return
         # Neue Daten in die Queue einfügen
-        self.data_queue.put((raw_importances, aggregated_importance, uncertainty, sample_idx, iteration))
+        # self.data_queue.put((raw_importances, aggregated_importance, uncertainty, sample_idx, iteration))
 
 #
 # class LiveVisualizer:
