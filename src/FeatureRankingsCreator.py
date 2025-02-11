@@ -1213,25 +1213,54 @@ class FeatureRankingsCreator:
         logging.info(f"Appended average execution times to '{file_path}'")
 
     def sort_importances_based_on_attribution(self, aggregated_importances, method):
-        # Create DataFrame from aggregated importances
+
+        print(f"Before sorting: {len(aggregated_importances)} rows")
+        print(aggregated_importances.head())  # Show sample data
+
+        # Convert list of dictionaries to DataFrame if needed
         if isinstance(aggregated_importances, list):
             aggregated_importances = pd.DataFrame(aggregated_importances)
 
-        # Check if DataFrame is empty or doesn't have required columns
+        # Check for valid structure
         if aggregated_importances.empty:
             raise ValueError(f"No feature importances found for method {method}")
         if 'feature' not in aggregated_importances.columns or 'attribution' not in aggregated_importances.columns:
             raise KeyError("The DataFrame does not contain the required 'feature' and 'attribution' columns.")
 
-        # Group by 'feature' and compute the mean of the attributions
-        mean_importances = aggregated_importances.groupby('feature')['attribution'].mean().reset_index()
+        print(f"🔍 Before Grouping: {len(aggregated_importances)} rows")  # Should be 34, not 851
 
-        # Sort the importances by attribution values
+        # Ensure there is only one row per feature before sorting
+        mean_importances = aggregated_importances.groupby('feature', as_index=False).mean()
+
+        print(f"🔍 After Grouping: {len(mean_importances)} rows")  # Should be 34
+
+        # Sort by attribution values
         sorted_importances = mean_importances.sort_values(by='attribution', ascending=False)
+
+        # Save & return
         self.save_importances_in_file(mean_importances_sorted=sorted_importances, method=method)
-        # Store the sorted importances
         self.feature_importance_results[method] = sorted_importances
         return sorted_importances
+
+        # # Create DataFrame from aggregated importances
+        # if isinstance(aggregated_importances, list):
+        #     aggregated_importances = pd.DataFrame(aggregated_importances)
+        #
+        # # Check if DataFrame is empty or doesn't have required columns
+        # if aggregated_importances.empty:
+        #     raise ValueError(f"No feature importances found for method {method}")
+        # if 'feature' not in aggregated_importances.columns or 'attribution' not in aggregated_importances.columns:
+        #     raise KeyError("The DataFrame does not contain the required 'feature' and 'attribution' columns.")
+        #
+        # # Group by 'feature' and compute the mean of the attributions
+        # mean_importances = aggregated_importances.groupby('feature')['attribution'].mean().reset_index()
+        #
+        # # Sort the importances by attribution values
+        # sorted_importances = mean_importances.sort_values(by='attribution', ascending=False)
+        # self.save_importances_in_file(mean_importances_sorted=sorted_importances, method=method)
+        # # Store the sorted importances
+        # self.feature_importance_results[method] = sorted_importances
+        # return sorted_importances
 
     def save_importances_in_file(self, mean_importances_sorted, method):
         filename = f"{self.paths['results_folder_path']}/{method}.csv"
@@ -1293,45 +1322,7 @@ class FeatureRankingsCreator:
         print(df_importances)
         return df_importances
 
-    def sort_importances_based_on_attribution(self, aggregated_importances, method):
-        """
-        Sortiert das aggregierte DataFrame, das global aggregierte Werte pro Feature enthält.
-        Erwartet, dass aggregated_importances ein DataFrame mit den Spalten "feature" und "attribution" ist.
-        """
-        # Überprüfe, ob die erwarteten Spalten existieren
-        if "feature" not in aggregated_importances.columns or "attribution" not in aggregated_importances.columns:
-            raise KeyError("The DataFrame does not contain the required 'feature' and 'attribution' columns.")
-
-        # Sortiere nach "attribution" (z. B. absteigend)
-        sorted_importances = aggregated_importances.sort_values(by="attribution", ascending=False)
-
-        self.save_importances_in_file(mean_importances_sorted=sorted_importances, method=method)
-        self.feature_importance_results[method] = sorted_importances
-        return sorted_importances
-
     def compute_autodeepactif_full(self, valid_loader):
-
-        # Versin 1: Old, features only averaging over timesteps and inv weighting over samples
-        # # Example Usage:
-        # device = "cuda" if torch.cuda.is_available() else "mps" if torch.backends.mps.is_available() else "cpu"
-        #
-        # # Initialize model
-        # model = self.trainer.model # Foval(device=device, feature_count=len(input_features)).to(device)
-        #
-        # # Run DeepACTIF Analysis on **each sample**
-        # analyzer = AutoDeepACTIF_AnalyzerBackprop(model, self.selected_features, device, use_gaussian_spread=True)
-        # sample_importances = analyzer.analyze(valid_loader)
-        #
-        # # print("Sample importances: ", sample_importances)
-        # # Aggregate & return per sample in SHAP format
-        # results = analyzer.aggregate_and_return(sample_importances)
-        #
-        # # Print feature importance **for each sample**
-        # for sample_idx, sample_result in enumerate(results):
-        #     print(f"✅ Feature Importance for Sample {sample_idx}: {sample_result}")
-        #
-        # return results
-
         # Version 2:
         # Example Usage:
         device = "cuda" if torch.cuda.is_available() else "mps" if torch.backends.mps.is_available() else "cpu"
@@ -1365,37 +1356,12 @@ class FeatureRankingsCreator:
         # Prepare the results with the aggregated importance
         results = [{'feature': self.selected_features[i], 'attribution': aggregated_over_time[i]} for i in
                    range(len(self.selected_features))]
-
-        # print("Results: ", results)
-        # print("aggregated_importance: ", aggregated_importance)
-
         return results
 
     def compute_bayesACTIF(self, valid_loader):
         # Example Usage:
         device = "cuda" if torch.cuda.is_available() else "mps" if torch.backends.mps.is_available() else "cpu"
 
-        # # Führe die Analyse mit Live-Visualisierung durch:
-        # subject_importances = self.bayes_analyzer.analyze(valid_loader, device, return_raw=True, live_visualizer=live_vis,
-        #                                              update_interval=5)
-        # print("Final subject importances shape:", subject_importances.shape)
-        #
-        # # Hier kannst du noch weitere Aggregationen vornehmen, z.B.:
-        # aggregated = subject_importances.mean(dim=1)  # (num_samples, num_features)
-        # uncertainty = subject_importances.std(dim=1)  # (num_samples, num_features)
-        #
-        # # (Optional) Update einmal zum Schluss:
-        # self.live_vis.update(
-        #     raw_importances=subject_importances.cpu().detach().numpy(),
-        #     aggregated_importance=aggregated.cpu().detach().numpy(),
-        #     uncertainty=uncertainty.cpu().detach().numpy(),
-        #     sample_idx=0,
-        #     iteration=9999
-        # )
-        # return subject_importances
-        #
-        # live_vis.update(raw_importances, aggregated_importance, uncertainty, sample_idx, iteration)
-        # time.sleep(0.1)  # Simuliere Wartezeit zwischen Updates
 
         # Version 1:
         # Annahme: trainer.model und selected_features sind bereits definiert.

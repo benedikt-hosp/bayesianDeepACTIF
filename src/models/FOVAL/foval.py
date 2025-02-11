@@ -6,6 +6,7 @@ class Foval(nn.Module):
     def __init__(self, device, feature_count):
         super(Foval, self).__init__()
 
+        self.maxpool = None
         self.device = device
         self.to(device)
 

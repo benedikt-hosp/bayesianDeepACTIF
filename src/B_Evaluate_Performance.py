@@ -24,7 +24,7 @@ np.random.seed(42)
 torch.manual_seed(42)
 
 # ================ Device options
-device = torch.device("cpu")  # Replace 0 with the device number for your other GPU
+device = torch.device("mps")  # Replace 0 with the device number for your other GPU
 
 # ================ Save folder options
 model_save_dir = "models"
