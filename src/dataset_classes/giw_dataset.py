@@ -190,22 +190,101 @@ class GIWDataset(AbstractDatasetClass):
 
         return data_in
 
-    # 3.
+    # # 3.
+    # def normalize_data(self, data):
+    #
+    #     # Apply global normalization first
+    #     data_set_in = global_normalization(data)
+    #
+    #     # Then proceed with the existing subject-wise normalization
+    #     unique_subjects = data_set_in['SubjectID'].unique()
+    #
+    #     # Choose your scaler for subject-wise normalization
+    #     subject_scaler = RobustScaler()
+    #
+    #     # Apply subject-wise normalization
+    #     dataset_in_normalized = subject_wise_normalization(data_set_in, unique_subjects, subject_scaler)
+    #
+    #     return dataset_in_normalized
+
+
     def normalize_data(self, data):
+        """
+        Apply subject-wise normalization using RobustScaler.
+        """
+        # Normalize globally first (if necessary)
+        data = global_normalization(data)
 
-        # Apply global normalization first
-        data_set_in = global_normalization(data)
+        # Apply subject-wise normalization efficiently
+        return subject_wise_normalization(data, data['SubjectID'].unique(), self.subject_scaler)
 
-        # Then proceed with the existing subject-wise normalization
-        unique_subjects = data_set_in['SubjectID'].unique()
+    #
+    # # 4. A (Traininig data)
+    # def calculate_transformations_for_features(self, data_in):
+    #     best_transformers = {}
+    #     transformed_data = data_in.copy()
+    #     ideal_skew = 0.0
+    #     ideal_kurt = 3.0
+    #
+    #     for column in data_in.columns:
+    #         if column == "Gt_Depth" or column == "SubjectID":
+    #             continue
+    #
+    #         # print(f"Processing column: {column}")
+    #         original_skew = skew(data_in[column])
+    #         original_kurt = kurtosis(data_in[column], fisher=False)  # Pearson's definition
+    #
+    #         best_transform = None
+    #         best_transform_name = ""
+    #         min_skew_diff = float('inf')
+    #
+    #         for name, transformer_class in self.transformers.items():
+    #             transformer = transformer_class()  # Create a new object for each transformer
+    #             try:
+    #                 data_transformed = transformer.fit_transform(data_in[[column]])
+    #                 current_skew = skew(data_transformed)[0]
+    #                 current_kurt = kurtosis(data_transformed, fisher=False)[0]
+    #
+    #                 # Calculate the distance from the ideal distribution characteristics
+    #                 dist = np.sqrt((current_skew - ideal_skew) ** 2 + (current_kurt - ideal_kurt) ** 2)
+    #
+    #                 # If this transformer is the best so far, store it
+    #                 if dist < min_skew_diff:
+    #                     min_skew_diff = dist
+    #                     best_transform = transformer
+    #                     best_transform_name = name
+    #
+    #             except ValueError as e:  # Handle failed transformations, e.g., Box-Cox with negative values
+    #                 # print(f"Transformation failed for {name} on column {column}: {e}")
+    #                 continue
+    #
+    #         best_transformers[column] = (best_transform_name, best_transform)
+    #
+    #         # Transform the column in the dataset
+    #         if best_transform:
+    #             transformed_column = best_transform.transform(data_in[[column]])
+    #             transformed_data[column] = transformed_column.squeeze()
+    #
+    #     self.best_transformers = best_transformers
+    #     return transformed_data
+    #
+    # # 4. B ( Validation/ test data)
+    # def apply_transformations_on_features(self, data_in):
+    #     transformed_validation_data = data_in.copy()
+    #
+    #     for column, (name, transformer) in self.best_transformers.items():
+    #         if transformer is not None:
+    #             if column == "Gt_Depth":
+    #                 transformed_validation_data[column] = data_in[[column]]
+    #             elif column == "SubjectID":
+    #                 continue
+    #             else:
+    #                 # Apply the transformation using the fitted transformer object
+    #                 transformed_column = transformer.transform(data_in[[column]])
+    #                 transformed_validation_data[column] = transformed_column.squeeze()
+    #
+    #     return transformed_validation_data
 
-        # Choose your scaler for subject-wise normalization
-        subject_scaler = RobustScaler()
-
-        # Apply subject-wise normalization
-        dataset_in_normalized = subject_wise_normalization(data_set_in, unique_subjects, subject_scaler)
-
-        return dataset_in_normalized
 
     # 4. A (Traininig data)
     def calculate_transformations_for_features(self, data_in):
@@ -273,28 +352,45 @@ class GIWDataset(AbstractDatasetClass):
 
         return transformed_validation_data
 
-    # 5.
-    def scale_target(self, data_in, isTrain=False):
+    #
+    # # 5.
+    # def scale_target(self, data_in, isTrain=False):
+    #
+    #     if isTrain:
+    #         self.target_scaler = self.select_scaler(self.scaler_config)
+    #         # Extract GT_depth before scaling and reshape for scaler compatibility
+    #         gt_depth = data_in['Gt_Depth'].values.reshape(-1, 1)
+    #         # If a feature scaler is set, fit and transform the training data, and transform the validation data
+    #         if self.target_scaler is not None:
+    #             gt_depth = self.target_scaler.fit_transform(gt_depth)
+    #             # Re-attach the excluded columns
+    #         data_in['Gt_Depth'] = gt_depth.ravel()
+    #     else:
+    #         gt_depth = data_in['Gt_Depth'].values.reshape(-1, 1)
+    #         # If a feature scaler is set, fit and transform the training data, and transform the validation data
+    #         if self.target_scaler is not None:
+    #             gt_depth = self.target_scaler.transform(gt_depth)
+    #             # Re-attach the excluded columns
+    #         data_in['Gt_Depth'] = gt_depth.ravel()
+    #
+    #     return data_in
 
+
+    def scale_target(self, data_in, isTrain=False):
+        """Scale the target variable (Gt_Depth) using the selected scaler."""
+
+        gt_depth = data_in['Gt_Depth'].values.reshape(-1, 1)  # Extract and reshape
+
+        # Select or use existing scaler
         if isTrain:
             self.target_scaler = self.select_scaler(self.scaler_config)
-            # Extract GT_depth before scaling and reshape for scaler compatibility
-            gt_depth = data_in['Gt_Depth'].values.reshape(-1, 1)
-            # If a feature scaler is set, fit and transform the training data, and transform the validation data
             if self.target_scaler is not None:
                 gt_depth = self.target_scaler.fit_transform(gt_depth)
-                # Re-attach the excluded columns
-            data_in['Gt_Depth'] = gt_depth.ravel()
-        else:
-            gt_depth = data_in['Gt_Depth'].values.reshape(-1, 1)
-            # If a feature scaler is set, fit and transform the training data, and transform the validation data
-            if self.target_scaler is not None:
-                gt_depth = self.target_scaler.transform(gt_depth)
-                # Re-attach the excluded columns
-            data_in['Gt_Depth'] = gt_depth.ravel()
+        elif self.target_scaler is not None:
+            gt_depth = self.target_scaler.transform(gt_depth)
 
+        data_in['Gt_Depth'] = gt_depth.ravel()  # Store back transformed values
         return data_in
-
     # 6.
     def scale_features(self, data_in, isTrain=True):
         """
@@ -322,22 +418,50 @@ class GIWDataset(AbstractDatasetClass):
         # data_out[self.subject_id_column] = subject_id_column.reset_index(drop=True)
 
         return data_in
+    #
+    # # 6.
+    # def create_sequences(self, df):
+    #     """
+    #     Create sequences of data for time-series analysis.
+    #
+    #     :param df: Dataframe with the data to sequence.
+    #     :return: List of sequences, where each sequence is a tuple of (features, target, subject_id).
+    #     """
+    #     sequences = []
+    #     grouped_data = df.groupby('SubjectID')
+    #     for subj_id, group in grouped_data:
+    #         for i in range(len(group) - self.sequence_length):
+    #             seq_features = group.iloc[i:i + self.sequence_length].drop(columns=['Gt_Depth', 'SubjectID'])
+    #             seq_target = group.iloc[i + self.sequence_length]['Gt_Depth']
+    #             sequences.append((seq_features, seq_target, subj_id))
+    #     return sequences
 
-    # 6.
+
     def create_sequences(self, df):
         """
-        Create sequences of data for time-series analysis.
+        Efficiently create sequences for time-series analysis.
 
-        :param df: Dataframe with the data to sequence.
-        :return: List of sequences, where each sequence is a tuple of (features, target, subject_id).
+        :param df: DataFrame containing time-series data.
+        :return: List of sequences as NumPy arrays (features, target, subject_id).
         """
         sequences = []
+
+        # Convert DataFrame to NumPy for faster slicing
         grouped_data = df.groupby('SubjectID')
+
         for subj_id, group in grouped_data:
-            for i in range(len(group) - self.sequence_length):
-                seq_features = group.iloc[i:i + self.sequence_length].drop(columns=['Gt_Depth', 'SubjectID'])
-                seq_target = group.iloc[i + self.sequence_length]['Gt_Depth']
-                sequences.append((seq_features, seq_target, subj_id))
+            group_values = group.drop(columns=['Gt_Depth', 'SubjectID']).values
+            targets = group['Gt_Depth'].values
+
+            # Vectorized slicing
+            seq_features = np.lib.stride_tricks.sliding_window_view(group_values,
+                                                                    (self.sequence_length, group_values.shape[1]))[:, 0,
+                           :]
+            seq_targets = targets[self.sequence_length:]
+
+            # Extend sequences efficiently
+            sequences.extend(zip(seq_features, seq_targets, [subj_id] * len(seq_features)))
+
         return sequences
 
     # Utilities
@@ -359,74 +483,118 @@ class GIWDataset(AbstractDatasetClass):
 
     def get_data(self):
         return self.input_data
+    #
+    # def get_data_loader(self, train_index, val_index=None, test_index=None, batch_size=100):
+    #     """
+    #     Create and return data loaders for training, validation, and testing datasets.
+    #
+    #     :param train_index: Indices for training subjects.
+    #     :param val_index: Indices for validation subjects (optional).
+    #     :param test_index: Indices for test subjects (optional).
+    #     :param batch_size: Batch size for the data loaders.
+    #     :return: Data loaders for training, validation, and testing datasets, and the input size.
+    #     """
+    #     train_loader = self.prepare_loader(train_index, batch_size, is_train=True)
+    #     val_loader = self.prepare_loader(val_index, batch_size, is_train=False) if val_index is not None else None
+    #     test_loader = self.prepare_loader(test_index, batch_size, is_train=False) if test_index is not None else None
+    #
+    #     input_size = train_loader.dataset[0][0].shape[1]  # Assuming the first dimension is batch_size
+    #
+    #     return train_loader, val_loader, input_size
+    #
+    # def prepare_loader(self, subject_index, batch_size, is_train=False):
+    #     subjects = subject_index if isinstance(subject_index, list) else [subject_index]
+    #     # print(f"Preparing data for subjects: {subjects}")
+    #     data = self.input_data[self.input_data['SubjectID'].isin(subjects)]
+    #     # print(data.head)
+    #     # if is_train:
+    #     #     data.to_csv('checkpoint_raw_1.csv')
+    #
+    #     # Check if the data is empty before proceeding
+    #     if data.empty:
+    #         raise ValueError(f"No data found for subjects: {subjects}")
+    #
+    #     # Feature creation and normalization
+    #     data = self.create_features(data)
+    #     print("Features in Dataaset are ", self.current_features)
+    #     data = data[self.current_features]
+    #     # if is_train:
+    #     #     data.to_csv('checkpoint_features_2.csv')
+    #     data = self.normalize_data(data)
+    #
+    #     # Apply transformations if necessary
+    #     if is_train:
+    #         #     data.to_csv('checkpoint_normalized_3.csv')
+    #
+    #         data = self.calculate_transformations_for_features(data)
+    #         # data.to_csv('checkpoint_transformed_4.csv')
+    #
+    #     else:
+    #         data = self.apply_transformations_on_features(data)
+    #
+    #     # Scale features and target (transform only using the fitted scaler)
+    #     # data = self.scale_features(data, isTrain=is_train)
+    #     data = self.scale_target(data, isTrain=is_train)
+    #     # if is_train:
+    #     #     data.to_csv('checkpoint_scaled_5.csv')
+    #
+    #     # Generate sequences
+    #     sequences = self.create_sequences(data)
+    #     features, targets = separate_features_and_targets(sequences)
+    #
+    #     # Convert to tensors and create data loader
+    #     features_tensor, targets_tensor = create_lstm_tensors_dataset(features, targets)
+    #     data_loader = create_dataloaders_dataset(features_tensor, targets_tensor, batch_size=batch_size)
+    #
+    #     # if is_train:
+    #     #     # Assuming your list is called sequences
+    #     #     with open('train_sequences_new.pkl', 'wb') as f:
+    #     #         pickle.dump(sequences, f)
+    #
+    #     # sequences.to_pickle("train_sequences_new.pkl")
+    #
+    #     return data_loader
+
 
     def get_data_loader(self, train_index, val_index=None, test_index=None, batch_size=100):
         """
-        Create and return data loaders for training, validation, and testing datasets.
-
-        :param train_index: Indices for training subjects.
-        :param val_index: Indices for validation subjects (optional).
-        :param test_index: Indices for test subjects (optional).
-        :param batch_size: Batch size for the data loaders.
-        :return: Data loaders for training, validation, and testing datasets, and the input size.
+        Create and return data loaders for training and validation datasets.
         """
         train_loader = self.prepare_loader(train_index, batch_size, is_train=True)
         val_loader = self.prepare_loader(val_index, batch_size, is_train=False) if val_index is not None else None
-        test_loader = self.prepare_loader(test_index, batch_size, is_train=False) if test_index is not None else None
 
-        input_size = train_loader.dataset[0][0].shape[1]  # Assuming the first dimension is batch_size
+        # Get input size dynamically
+        # input_size = train_loader.dataset.tensors[0].shape[1]
+        # Correct way to get input_size from TimeSeriesDataset
+        first_sample, _ = train_loader.dataset[0]  # Get first (features, target) tuple
+        input_size = first_sample.shape[1]  # Extract feature dimension
 
         return train_loader, val_loader, input_size
 
     def prepare_loader(self, subject_index, batch_size, is_train=False):
         subjects = subject_index if isinstance(subject_index, list) else [subject_index]
-        # print(f"Preparing data for subjects: {subjects}")
         data = self.input_data[self.input_data['SubjectID'].isin(subjects)]
-        # print(data.head)
-        # if is_train:
-        #     data.to_csv('checkpoint_raw_1.csv')
 
-        # Check if the data is empty before proceeding
         if data.empty:
             raise ValueError(f"No data found for subjects: {subjects}")
 
-        # Feature creation and normalization
+        # Feature engineering and normalization
         data = self.create_features(data)
-        print("Features in Dataaset are ", self.current_features)
         data = data[self.current_features]
-        # if is_train:
-        #     data.to_csv('checkpoint_features_2.csv')
         data = self.normalize_data(data)
 
-        # Apply transformations if necessary
-        if is_train:
-            #     data.to_csv('checkpoint_normalized_3.csv')
+        # Apply transformations only if required
+        data = self.calculate_transformations_for_features(data) if is_train else self.apply_transformations_on_features(data)
 
-            data = self.calculate_transformations_for_features(data)
-            # data.to_csv('checkpoint_transformed_4.csv')
-
-        else:
-            data = self.apply_transformations_on_features(data)
-
-        # Scale features and target (transform only using the fitted scaler)
-        # data = self.scale_features(data, isTrain=is_train)
+        # Scale target
         data = self.scale_target(data, isTrain=is_train)
-        # if is_train:
-        #     data.to_csv('checkpoint_scaled_5.csv')
 
         # Generate sequences
         sequences = self.create_sequences(data)
         features, targets = separate_features_and_targets(sequences)
 
-        # Convert to tensors and create data loader
+        # Convert to tensors efficiently
         features_tensor, targets_tensor = create_lstm_tensors_dataset(features, targets)
-        data_loader = create_dataloaders_dataset(features_tensor, targets_tensor, batch_size=batch_size)
 
-        # if is_train:
-        #     # Assuming your list is called sequences
-        #     with open('train_sequences_new.pkl', 'wb') as f:
-        #         pickle.dump(sequences, f)
-
-        # sequences.to_pickle("train_sequences_new.pkl")
-
-        return data_loader
+        # Create DataLoader
+        return create_dataloaders_dataset(features_tensor, targets_tensor, is_train, batch_size)

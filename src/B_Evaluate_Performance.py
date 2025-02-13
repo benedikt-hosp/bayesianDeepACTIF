@@ -131,20 +131,21 @@ def test_baseline_model(trainer, modelName, dataset, outputFolder, num_repetitio
     dataset.current_features = remaining_features
     dataset.load_data()
 
-    trainer.setup(feature_count=feature_count, feature_names=remaining_features)
+    print("Remaining features: ", remaining_features)
+    trainer.setup(features=remaining_features)
 
     # Perform cross-validation and get the performance results for each run
-    full_feature_performance = trainer.cross_validate(num_epochs=500, loocv=False, num_repeats=num_repetitions)
+    fold_accuracies = trainer.cross_validate(num_epochs=500)
 
-    results['Baseline'] = full_feature_performance
+    results['Baseline'] = fold_accuracies
 
     # Save baseline results
     print("Baseline saved to ", outputFolder)
     with open(outputFolder, "a") as file:
         file.write(f"Baseline Performance of {modelName} on dataset {dataset.name}: {full_feature_performance}\n")
 
-    print(f"Baseline Performance of {modelName} on dataset {dataset.name}: {full_feature_performance}\n")
-    return full_feature_performance
+    print(f"Baseline Performance of {modelName} on dataset {dataset.name}: {fold_accuracies}\n")
+    return fold_accuracies
 
 
 def getFeatureList(path):
@@ -200,7 +201,7 @@ if __name__ == '__main__':
 
     # 1. Baseline performance evaluation
     print(f" 1. Testing baseline {MODEL} on dataset {datasetName}")
-    # baseline_performance = test_baseline_model(trainer, modelName, dataset, paths["save_path"], num_repetitions)
+    baseline_performance = test_baseline_model(trainer, MODEL, dataset, paths["evaluation_metrics_save_path"], num_repetitions)
 
     # 2. Loop over all feature lists (CSV files) and evaluate
     for file_name in reversed(os.listdir(paths["results_folder_path"])):

@@ -256,40 +256,97 @@ class BayesianFeatureImportance(metaclass=Singleton):
         return spread_importance
 
         # --- Bayesian Updating ---
+    # def update_bayesian(self, sample_importance, sigma_obs=None):
+    #     """
+    #     Updates the Bayesian prior per feature, using feature-wise uncertainty updating.
+    #
+    #     Args:
+    #         sample_importance (np.ndarray): Feature importance for one sample, shape (num_features,).
+    #         sigma_obs (np.ndarray or float, optional): Observational uncertainty per feature.
+    #             - If float, applies same sigma_obs to all features.
+    #             - If array, must have shape (num_features,).
+    #     """
+    #     print("\n🔍 Before update:")
+    #     print(f"Mu_prior: {self.mu_prior}")
+    #     print(f"Sigma_prior: {self.sigma_prior}")
+    #
+    #     if sigma_obs is None:
+    #         sigma_obs = np.ones_like(self.sigma_prior) * 0.1  # Default: Same uncertainty per feature
+    #     elif isinstance(sigma_obs, float):
+    #         sigma_obs = np.ones_like(self.sigma_prior) * sigma_obs  # Convert to per-feature array
+    #
+    #     # Convert variances (σ²)
+    #     prior_var = self.sigma_prior ** 2  # Current prior variance (per feature)
+    #     obs_var = sigma_obs ** 2  # Observation variance (per feature)
+    #
+    #     # Bayesian Update Equations
+    #     posterior_var = 1.0 / (1.0 / prior_var + 1.0 / obs_var)
+    #     posterior_mean = posterior_var * (self.mu_prior / prior_var + sample_importance / obs_var)
+    #
+    #     # Update priors
+    #     self.mu_prior = posterior_mean
+    #     self.sigma_prior = np.sqrt(posterior_var)  # Convert back to standard deviation
+    #
+    #     print("\n✅ After update:")
+    #     print(f"Mu_prior: {self.mu_prior}")
+    #     print(f"Sigma_prior: {self.sigma_prior}")  # Now each feature should have a unique value!
+
     def update_bayesian(self, sample_importance, sigma_obs=None):
         """
-        Updates the Bayesian prior per feature, using feature-wise uncertainty updating.
+        Vectorized Bayesian Update for Feature Importances.
 
         Args:
-            sample_importance (np.ndarray): Feature importance for one sample, shape (num_features,).
-            sigma_obs (np.ndarray or float, optional): Observational uncertainty per feature.
+            sample_importance (np.ndarray): Importance values for one sample (num_features,).
+            sigma_obs (np.ndarray or float, optional): Observation uncertainty per feature.
                 - If float, applies same sigma_obs to all features.
                 - If array, must have shape (num_features,).
         """
-        print("\n🔍 Before update:")
-        print(f"Mu_prior: {self.mu_prior}")
-        print(f"Sigma_prior: {self.sigma_prior}")
-
         if sigma_obs is None:
-            sigma_obs = np.ones_like(self.sigma_prior) * 0.1  # Default: Same uncertainty per feature
+            sigma_obs = np.ones_like(self.sigma_prior) * 0.1  # Default uncertainty
         elif isinstance(sigma_obs, float):
-            sigma_obs = np.ones_like(self.sigma_prior) * sigma_obs  # Convert to per-feature array
+            sigma_obs = np.ones_like(self.sigma_prior) * sigma_obs  # Broadcast to array
 
-        # Convert variances (σ²)
-        prior_var = self.sigma_prior ** 2  # Current prior variance (per feature)
-        obs_var = sigma_obs ** 2  # Observation variance (per feature)
+        # Convert standard deviations to variances
+        prior_var = self.sigma_prior ** 2
+        obs_var = sigma_obs ** 2
 
-        # Bayesian Update Equations
+        # Compute posterior using vectorized operations
         posterior_var = 1.0 / (1.0 / prior_var + 1.0 / obs_var)
         posterior_mean = posterior_var * (self.mu_prior / prior_var + sample_importance / obs_var)
 
         # Update priors
         self.mu_prior = posterior_mean
-        self.sigma_prior = np.sqrt(posterior_var)  # Convert back to standard deviation
+        self.sigma_prior = np.sqrt(posterior_var)  # Convert back to std deviation
 
-        print("\n✅ After update:")
-        print(f"Mu_prior: {self.mu_prior}")
-        print(f"Sigma_prior: {self.sigma_prior}")  # Now each feature should have a unique value!
+    # def analyze_bayesian(self, dataloader):
+    #     """
+    #     Computes Bayesian feature importances and updates priors per feature.
+    #
+    #     Returns:
+    #         - np.ndarray: Posterior means (`mu_prior`)
+    #         - np.ndarray: Posterior standard deviations (`sigma_prior`)
+    #     """
+    #     print("🔍 Starting Bayesian Analysis...")
+    #
+    #     for batch_idx, batch in enumerate(dataloader):
+    #         if isinstance(batch, (list, tuple)):
+    #             batch = batch[0]
+    #         batch = batch.to(self.device, dtype=torch.float32)
+    #
+    #         # Compute feature importance for this batch
+    #         sample_importances = self.forward_pass_with_importance(batch, return_raw=False)
+    #         sample_importances_np = sample_importances.cpu().detach().numpy()  # Shape: (batch_size, num_features)
+    #
+    #         for i, sample_imp in enumerate(sample_importances_np):
+    #             print(f"🛠 Updating sample {i} in batch {batch_idx}")
+    #
+    #             # 🔥 Compute per-feature observational uncertainty dynamically!
+    #             sigma_obs = np.std(sample_importances_np, axis=0) + 0.01  # Add small value to avoid zero variance
+    #
+    #             self.update_bayesian(sample_imp, sigma_obs=sigma_obs)  # 🔄 Feature-wise Bayesian update
+    #
+    #     print("✅ Final Bayesian priors computed.")
+    #     return self.mu_prior, self.sigma_prior
 
     def analyze_bayesian(self, dataloader):
         """
@@ -310,13 +367,12 @@ class BayesianFeatureImportance(metaclass=Singleton):
             sample_importances = self.forward_pass_with_importance(batch, return_raw=False)
             sample_importances_np = sample_importances.cpu().detach().numpy()  # Shape: (batch_size, num_features)
 
-            for i, sample_imp in enumerate(sample_importances_np):
-                print(f"🛠 Updating sample {i} in batch {batch_idx}")
+            # 🔥 Compute per-feature observational uncertainty dynamically!
+            sigma_obs = np.std(sample_importances_np, axis=0) + 0.01  # Add small value to avoid zero variance
 
-                # 🔥 Compute per-feature observational uncertainty dynamically!
-                sigma_obs = np.std(sample_importances_np, axis=0) + 0.01  # Add small value to avoid zero variance
-
-                self.update_bayesian(sample_imp, sigma_obs=sigma_obs)  # 🔄 Feature-wise Bayesian update
+            # 🔄 Apply **vectorized** Bayesian update for all samples at once
+            for sample_imp in sample_importances_np:
+                self.update_bayesian(sample_imp, sigma_obs=sigma_obs)
 
         print("✅ Final Bayesian priors computed.")
         return self.mu_prior, self.sigma_prior

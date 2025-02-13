@@ -165,6 +165,39 @@ class FOVALTrainer:
         print(f"Average Cross-Validation MSE: {average_accuracy}")
         return average_accuracy
 
+    # def cross_validate(self, num_epochs=200):
+    #     """
+    #     Perform cross-validation on the dataset.
+    #     """
+    #     kf = KFold(n_splits=self.n_splits, shuffle=True, random_state=42)
+    #     fold_accuracies = []
+    #
+    #     for fold, (train_idx, val_idx) in enumerate(kf.split(self.dataset.subject_list)):
+    #         print(f"\n\nStarting Fold {fold + 1}/{self.n_splits}")
+    #
+    #         # Use indices to select subject IDs and convert them to lists
+    #         train_subjects = list(self.dataset.subject_list[train_idx])
+    #         val_subjects = list(self.dataset.subject_list[val_idx])
+    #
+    #         print("Train Subjects: ", train_subjects)
+    #         print("Validation Subjects: ", val_subjects)
+    #         # Set the current fold number
+    #         self.current_fold = fold + 1
+    #
+    #         fold_mae = self.run_fold(train_subjects, val_subjects, None, num_epochs)
+    #         fold_accuracies.append(fold_mae)
+    #         print(f"Fold {fold + 1} MAE: {fold_mae}")
+    #         average_accuracy = sum(fold_accuracies) / len(fold_accuracies)
+    #         print(f"Average Validation MAE across folds: {average_accuracy}")
+    #         self.reset_metrics()
+    #
+    #     # Calculate overall performance on whole dataset
+    #     best_fold = min(fold_accuracies)
+    #     print(f"Best Fold with MAE: {best_fold}")
+    #     average_accuracy = sum(fold_accuracies) / len(fold_accuracies)
+    #     print(f"Average Cross-Validation MSE: {average_accuracy}")
+    #     return average_accuracy
+
     def cross_validate(self, num_epochs=200):
         """
         Perform cross-validation on the dataset.
@@ -175,28 +208,30 @@ class FOVALTrainer:
         for fold, (train_idx, val_idx) in enumerate(kf.split(self.dataset.subject_list)):
             print(f"\n\nStarting Fold {fold + 1}/{self.n_splits}")
 
-            # Use indices to select subject IDs and convert them to lists
-            train_subjects = list(self.dataset.subject_list[train_idx])
-            val_subjects = list(self.dataset.subject_list[val_idx])
+            # Select subject IDs using indices
+            train_subjects = self.dataset.subject_list[train_idx].tolist()
+            val_subjects = self.dataset.subject_list[val_idx].tolist()
 
-            print("Train Subjects: ", train_subjects)
-            print("Validation Subjects: ", val_subjects)
-            # Set the current fold number
+            print(f"Train Subjects: {train_subjects}")
+            print(f"Validation Subjects: {val_subjects}")
+
             self.current_fold = fold + 1
 
+            # Run fold training and validation
             fold_mae = self.run_fold(train_subjects, val_subjects, None, num_epochs)
             fold_accuracies.append(fold_mae)
+
             print(f"Fold {fold + 1} MAE: {fold_mae}")
-            average_accuracy = sum(fold_accuracies) / len(fold_accuracies)
-            print(f"Average Validation MAE across folds: {average_accuracy}")
             self.reset_metrics()
 
-        # Calculate overall performance on whole dataset
+        # Compute best and average performance
         best_fold = min(fold_accuracies)
-        print(f"Best Fold with MAE: {best_fold}")
-        average_accuracy = sum(fold_accuracies) / len(fold_accuracies)
-        print(f"Average Cross-Validation MSE: {average_accuracy}")
-        return average_accuracy
+        avg_mae = np.mean(fold_accuracies)
+
+        print(f"Best Fold MAE: {best_fold}")
+        print(f"Average Cross-Validation MAE: {avg_mae}")
+
+        return avg_mae
 
     def run_fold(self, train_index, val_index=None, test_index=None, num_epochs=10):
         # Ensure that val_index is not None and has elements
@@ -211,8 +246,8 @@ class FOVALTrainer:
             validation_participant_name = "unknown"
 
         # Set the save path using the validation participant's name
-        self.save_path = os.path.join("results", validation_participant_name)
-        os.makedirs(self.save_path, exist_ok=True)  # Create the directory if it doesn't exist
+        # self.save_path = os.path.join("results", validation_participant_name)
+        # os.makedirs(self.save_path, exist_ok=True)  # Create the directory if it doesn't exist
 
         print(
             f"Train index: {train_index} and val index {validation_participant_name}, and test index {test_index}, and batch size {self.batch_size}")
@@ -246,7 +281,7 @@ class FOVALTrainer:
             profiler.step()  # Step profiler at the end of each epoch
 
         # Save model state dictionary after training
-        self.save_model_state(epoch)
+        # self.save_model_state(epoch)
         # print validation SMAE and MAE averages of epoch
         # average_fold_val_smae = np.mean([f['best_val_smae'] for f in fold_performance])
         # print(f"Average Validation SMAE across folds: {average_fold_val_smae}")
@@ -256,11 +291,55 @@ class FOVALTrainer:
 
         return self.best_metrics["mae"]
 
+    # def train_epoch(self, epoch):
+    #     """
+    #     Train the model for one epoch.
+    #     """
+    #     scaler = GradScaler()  # Initialize GradScaler for mixed precision
+    #
+    #     mse_loss_fn = nn.MSELoss(reduction='sum').to(self.device)
+    #     mae_loss_fn = nn.L1Loss().to(self.device)
+    #     smae_loss_fn = nn.SmoothL1Loss(beta=0.75).to(self.device)
+    #
+    #     self.model.train()
+    #     total_samples = 0.0
+    #     total_mae, total_mse, total_smae = 0, 0, 0
+    #
+    #     for X_batch, y_batch in self.train_loader:
+    #         X_batch, y_batch = X_batch.to(self.device), y_batch.to(self.device)
+    #         self.optimizer.zero_grad()
+    #
+    #         # Example forward pass with mixed precision
+    #         with autocast():
+    #             y_pred = self.model(X_batch, return_intermediates=False)
+    #             smae_loss = smae_loss_fn(y_pred, y_batch)
+    #         # Scaled backward pass
+    #         scaler.scale(smae_loss).backward()
+    #         scaler.step(self.optimizer)
+    #         scaler.update()
+    #
+    #         # smae_loss.backward()
+    #         # self.optimizer.step()
+    #
+    #         # Inverse transform for metric calculation (post-backpropagation)
+    #         y_pred_inv = self.inverse_transform_target(y_pred)
+    #         y_batch_inv = self.inverse_transform_target(y_batch)
+    #
+    #         # Accumulate metrics on the original scale
+    #         total_mae += mae_loss_fn(y_pred_inv, y_batch_inv).item() * y_batch.size(0)
+    #         total_mse += mse_loss_fn(y_pred_inv, y_batch_inv).item() * y_batch.size(0)
+    #         total_smae += smae_loss_fn(y_pred_inv, y_batch_inv).item() * y_batch.size(0)
+    #         total_samples += y_batch.size(0)
+    #
+    #     self.current_metrics["train_mae"] = total_mae / total_samples
+    #     self.current_metrics["train_mse"] = total_mse / total_samples
+    #     self.current_metrics["train_smae"] = total_smae / total_samples
+
     def train_epoch(self, epoch):
         """
         Train the model for one epoch.
         """
-        scaler = GradScaler()  # Initialize GradScaler for mixed precision
+        scaler = GradScaler()  # Mixed precision training
 
         mse_loss_fn = nn.MSELoss(reduction='sum').to(self.device)
         mae_loss_fn = nn.L1Loss().to(self.device)
@@ -268,37 +347,75 @@ class FOVALTrainer:
 
         self.model.train()
         total_samples = 0.0
-        total_mae, total_mse, total_smae = 0, 0, 0
+        total_mae, total_mse, total_smae = 0.0, 0.0, 0.0
 
-        for X_batch, y_batch in self.train_loader:
-            X_batch, y_batch = X_batch.to(self.device), y_batch.to(self.device)
-            self.optimizer.zero_grad()
+        with torch.set_grad_enabled(True):
+            for X_batch, y_batch in self.train_loader:
+                X_batch, y_batch = X_batch.to(self.device, non_blocking=True), y_batch.to(self.device,
+                                                                                          non_blocking=True)
+                self.optimizer.zero_grad()
 
-            # Example forward pass with mixed precision
-            with autocast():
-                y_pred = self.model(X_batch, return_intermediates=False)
-                smae_loss = smae_loss_fn(y_pred, y_batch)
-            # Scaled backward pass
-            scaler.scale(smae_loss).backward()
-            scaler.step(self.optimizer)
-            scaler.update()
+                # Mixed precision forward pass
+                with autocast():
+                    y_pred = self.model(X_batch, return_intermediates=False)
+                    smae_loss = smae_loss_fn(y_pred, y_batch)
 
-            # smae_loss.backward()
-            # self.optimizer.step()
+                # Scaled backward pass
+                scaler.scale(smae_loss).backward()
+                scaler.step(self.optimizer)
+                scaler.update()
 
-            # Inverse transform for metric calculation (post-backpropagation)
-            y_pred_inv = self.inverse_transform_target(y_pred)
-            y_batch_inv = self.inverse_transform_target(y_batch)
+                # Compute losses
+                y_pred_inv = self.inverse_transform_target(y_pred)
+                y_batch_inv = self.inverse_transform_target(y_batch)
 
-            # Accumulate metrics on the original scale
-            total_mae += mae_loss_fn(y_pred_inv, y_batch_inv).item() * y_batch.size(0)
-            total_mse += mse_loss_fn(y_pred_inv, y_batch_inv).item() * y_batch.size(0)
-            total_smae += smae_loss_fn(y_pred_inv, y_batch_inv).item() * y_batch.size(0)
-            total_samples += y_batch.size(0)
+                batch_size = y_batch.size(0)
+                total_mae += mae_loss_fn(y_pred_inv, y_batch_inv).item() * batch_size
+                total_mse += mse_loss_fn(y_pred_inv, y_batch_inv).item() * batch_size
+                total_smae += smae_loss_fn(y_pred_inv, y_batch_inv).item() * batch_size
+                total_samples += batch_size
 
         self.current_metrics["train_mae"] = total_mae / total_samples
         self.current_metrics["train_mse"] = total_mse / total_samples
         self.current_metrics["train_smae"] = total_smae / total_samples
+
+    # def validate_epoch(self, epoch, is_last_epoch=False):
+    #     mse_loss_fn = nn.MSELoss(reduction='sum').to(self.device)
+    #     mae_loss_fn = nn.L1Loss().to(self.device)
+    #     smae_loss_fn = nn.SmoothL1Loss().to(self.device)
+    #
+    #     self.model.eval()
+    #     total_val_mae, total_val_mse, total_val_smae = 0, 0, 0
+    #     total_val_samples = 0.0
+    #     all_predictions, all_true_values = [], []
+    #
+    #     with torch.no_grad():
+    #         for X_batch, y_batch in self.valid_loader:
+    #             # if keyboard.is_pressed('q'):
+    #             #    break
+    #             X_batch, y_batch = X_batch.to(self.device), y_batch.to(self.device)
+    #             y_pred, intermediates = self.model(X_batch, return_intermediates=True)
+    #
+    #             y_pred = self.inverse_transform_target(y_pred)
+    #             y_batch = self.inverse_transform_target(y_batch)
+    #
+    #             total_val_mae += mae_loss_fn(y_pred, y_batch).item() * y_batch.size(0)
+    #             total_val_mse += mse_loss_fn(y_pred, y_batch).item() * y_batch.size(0)
+    #             total_val_smae += smae_loss_fn(y_pred, y_batch).item() * y_batch.size(0)
+    #             total_val_samples += y_batch.size(0)
+    #
+    #             all_predictions.append(y_pred.cpu().numpy())
+    #             all_true_values.append(y_batch.cpu().numpy())
+    #
+    #     # Store metrics for this epoch
+    #     self.current_metrics["val_mae"] = total_val_mae / total_val_samples
+    #     self.current_metrics["val_mse"] = total_val_mse / total_val_samples
+    #     self.current_metrics["val_smae"] = total_val_smae / total_val_samples
+    #     self.current_metrics["val_r2"] = r2_score(np.concatenate(all_true_values), np.concatenate(all_predictions))
+    #
+    #     # Save activations and weights based on the condition
+    #     if self.save_intermediates_every_epoch or is_last_epoch:
+    #         self.save_activations_and_weights(intermediates, "intermediates", self.save_path)
 
     def validate_epoch(self, epoch, is_last_epoch=False):
         mse_loss_fn = nn.MSELoss(reduction='sum').to(self.device)
@@ -306,37 +423,37 @@ class FOVALTrainer:
         smae_loss_fn = nn.SmoothL1Loss().to(self.device)
 
         self.model.eval()
-        total_val_mae, total_val_mse, total_val_smae = 0, 0, 0
-        total_val_samples = 0.0
+        total_val_mae, total_val_mse, total_val_smae = 0.0, 0.0, 0.0
+        total_val_samples = 0
+
         all_predictions, all_true_values = [], []
 
-        with torch.no_grad():
+        with torch.no_grad():  # Ensure gradients are disabled
             for X_batch, y_batch in self.valid_loader:
-                # if keyboard.is_pressed('q'):
-                #    break
-                X_batch, y_batch = X_batch.to(self.device), y_batch.to(self.device)
+                X_batch, y_batch = X_batch.to(self.device, non_blocking=True), y_batch.to(self.device,
+                                                                                          non_blocking=True)
                 y_pred, intermediates = self.model(X_batch, return_intermediates=True)
 
-                y_pred = self.inverse_transform_target(y_pred)
-                y_batch = self.inverse_transform_target(y_batch)
+                y_pred_inv = self.inverse_transform_target(y_pred)
+                y_batch_inv = self.inverse_transform_target(y_batch)
 
-                total_val_mae += mae_loss_fn(y_pred, y_batch).item() * y_batch.size(0)
-                total_val_mse += mse_loss_fn(y_pred, y_batch).item() * y_batch.size(0)
-                total_val_smae += smae_loss_fn(y_pred, y_batch).item() * y_batch.size(0)
-                total_val_samples += y_batch.size(0)
+                batch_size = y_batch.size(0)
+                total_val_mae += mae_loss_fn(y_pred_inv, y_batch_inv).item() * batch_size
+                total_val_mse += mse_loss_fn(y_pred_inv, y_batch_inv).item() * batch_size
+                total_val_smae += smae_loss_fn(y_pred_inv, y_batch_inv).item() * batch_size
+                total_val_samples += batch_size
 
-                all_predictions.append(y_pred.cpu().numpy())
-                all_true_values.append(y_batch.cpu().numpy())
+                all_predictions.append(y_pred_inv.cpu().numpy())
+                all_true_values.append(y_batch_inv.cpu().numpy())
 
-        # Store metrics for this epoch
+        # Compute overall metrics
         self.current_metrics["val_mae"] = total_val_mae / total_val_samples
         self.current_metrics["val_mse"] = total_val_mse / total_val_samples
         self.current_metrics["val_smae"] = total_val_smae / total_val_samples
         self.current_metrics["val_r2"] = r2_score(np.concatenate(all_true_values), np.concatenate(all_predictions))
 
-        # Save activations and weights based on the condition
-        if self.save_intermediates_every_epoch or is_last_epoch:
-            self.save_activations_and_weights(intermediates, "intermediates", self.save_path)
+        # if self.save_intermediates_every_epoch or is_last_epoch:
+        #     self.save_activations_and_weights(intermediates, "intermediates", self.save_path)
 
     def inverse_transform_target(self, y_transformed):
         """
@@ -362,7 +479,7 @@ class FOVALTrainer:
             self.best_metrics["smae"] = self.current_metrics["val_smae"]
             self.best_metrics["mae"] = self.current_metrics["val_mae"]
 
-            torch.save(self.model.state_dict(), os.path.join(self.save_path, 'best_model_state_dict.pth'))
+            # torch.save(self.model.state_dict(), os.path.join(self.save_path, 'best_model_state_dict.pth'))
             print(
                 f"Model saved at epoch {epoch} with SMAE {self.current_metrics['val_smae']} and MAE {self.current_metrics['val_mae']}")
             self.patience_counter = 0
@@ -406,7 +523,7 @@ class FOVALTrainer:
         # if self.patience_counter > self.patience_limit:
         #     isBreakLoop = True
 
-        return isBreakLoop, self.patience_counter
+        # return isBreakLoop, self.patience_counter
 
     def analyzeResiduals(predictions, actual_values):
         # Calculate absolute errors
@@ -499,14 +616,14 @@ class FOVALTrainer:
         }
         return results
 
-    def save_model_state(self, epoch):
-        """
-        Save the model state dictionary after training.
-        """
-        # self.model.load_state_dict(torch.load(os.path.join(self.save_path, 'best_model_state_dict.pth')))
-        model_path = os.path.join(self.save_path, 'optimal_subject_model_state_dict.pth')
-        torch.save(self.model.state_dict(), model_path)
-        print(f"Optimal model state dictionary saved at epoch {epoch}.")
+    # def save_model_state(self, epoch):
+    #     """
+    #     Save the model state dictionary after training.
+    #     """
+    #     # self.model.load_state_dict(torch.load(os.path.join(self.save_path, 'best_model_state_dict.pth')))
+    #     model_path = os.path.join(self.save_path, 'optimal_subject_model_state_dict.pth')
+    #     torch.save(self.model.state_dict(), model_path)
+    #     print(f"Optimal model state dictionary saved at epoch {epoch}.")
 
     def set_save_path(self, fold_name):
         """

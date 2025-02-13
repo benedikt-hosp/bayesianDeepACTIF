@@ -610,7 +610,9 @@ class FeatureRankingsCreator:
             torch.cuda.empty_cache()
 
             # Append the batch attributions
-            all_attributions.append(attributions_mean.detach().cpu().numpy())
+            # all_attributions.append(attributions_mean.detach().cpu().numpy())
+            all_attributions.append(attributions_mean.detach())  # Kein Wechsel zu NumPy nötig
+
             total_instances += attributions_mean.size(0)
 
         # Concatenate all attributions (to handle batches)
@@ -718,7 +720,8 @@ class FeatureRankingsCreator:
 
                         sample_importance += layer_importance * reduced_output_importance[i]
 
-                    all_attributions.append(sample_importance.cpu().numpy())  # Store sample-level attribution
+                    # all_attributions.append(sample_importance.cpu().numpy())  # Store sample-level attribution
+                    all_attributions.append(sample_importance.detach())  # Kein Wechsel zu NumPy nötig
 
         all_attributions = np.array(all_attributions)  # Shape: [num_samples, num_features]
 

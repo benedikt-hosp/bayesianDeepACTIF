@@ -2,6 +2,14 @@ import torch.nn as nn
 import numpy as np
 
 
+class MaxOverTimePooling(nn.Module):
+    def __init__(self):
+        super(MaxOverTimePooling, self).__init__()
+
+    def forward(self, x):
+        return x.max(dim=1)[0]  # Max über die Zeitdimension (seq_length)
+
+
 class Foval(nn.Module):
     def __init__(self, device, feature_count):
         super(Foval, self).__init__()
@@ -13,7 +21,7 @@ class Foval(nn.Module):
         # Hyperparameteres
         self.hidden_layer_size = None
         self.feature_count = feature_count
-        self.input_size = 34
+        self.input_size = None
         self.embed_dim = None
         self.fc1_dim = None
         self.fc5_dim = None
@@ -33,9 +41,9 @@ class Foval(nn.Module):
         # Load Hyperparameteres from file
 
     def initialize(self, input_size, hidden_layer_size, fc1_dim, dropout_rate):
-        
+
         # input_size = 34
-        print("HP: ", input_size, hidden_layer_size, fc1_dim, dropout_rate)
+        print("Hyperparameters of model: ", input_size, hidden_layer_size, fc1_dim, dropout_rate)
         # Linear layer to transform input features if needed
         self.input_linear = nn.Linear(in_features=input_size, out_features=input_size)
 
@@ -43,7 +51,7 @@ class Foval(nn.Module):
         self.lstm = nn.LSTM(input_size=input_size, num_layers=1, batch_first=True, hidden_size=hidden_layer_size)
         self.layernorm = nn.LayerNorm(hidden_layer_size)
         self.batchnorm = nn.BatchNorm1d(hidden_layer_size)
-        self.maxpool = nn.AdaptiveMaxPool1d(1)
+        self.maxpool = MaxOverTimePooling()  # Hier registrieren
 
         # Additional fully connected layers
         self.fc1 = nn.Linear(hidden_layer_size, fc1_dim // 4)  # Use integer division
@@ -68,12 +76,7 @@ class Foval(nn.Module):
 
         # Permutiere zurück zu (batch, seq_length, hidden_layer_size)
         lstm_out_3 = lstm_out_norm.permute(0, 2, 1)
-
-        # Statt lstm_out_3.max(dim=1) verwenden wir jetzt den maxpool-Layer:
-        # Dafür permutieren wir in (batch, channels, seq_length)
-        lstm_out_for_pool = lstm_out_3.permute(0, 2, 1)
-        # Der AdaptiveMaxPool1d-Layer gibt ein Output mit shape (batch, channels, 1) zurück
-        lstm_out_max = self.maxpool(lstm_out_for_pool).squeeze(-1)  # Jetzt (batch, channels)
+        lstm_out_max = self.maxpool(lstm_out_3)  # Max über seq_length
 
         lstm_dropout = self.dropout(lstm_out_max)
         fc1_out = self.fc1(lstm_dropout)
