@@ -17,7 +17,7 @@ class Singleton(type):
         return cls._instances[cls]
 
 # Beispiel: BayesianFeatureImportance als Singleton
-class BayesianFeatureImportance(metaclass=Singleton):
+class BayesianFeatureImportance_orig(metaclass=Singleton):
     def __init__(self, model, features, device, use_gaussian_spread=True):
         """
         Initialize the analyzer.
