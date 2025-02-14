@@ -200,7 +200,7 @@ if __name__ == '__main__':
 
     # 1. Baseline performance evaluation
     print(f" 1. Testing baseline {MODEL} on dataset {datasetName}")
-    # baseline_performance = test_baseline_model(trainer, MODEL, dataset, paths["evaluation_metrics_save_path"], num_repetitions)
+    baseline_performance = test_baseline_model(trainer, MODEL, dataset, paths["evaluation_metrics_save_path"], num_repetitions)
 
     # 2. Loop over all feature lists (CSV files) and evaluate
     for file_name in reversed(os.listdir(paths["results_folder_path"])):

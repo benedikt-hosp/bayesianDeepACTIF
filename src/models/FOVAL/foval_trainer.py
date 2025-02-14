@@ -17,7 +17,7 @@ from src.dataset_classes.AbstractDatasetClass import AbstractDatasetClass
 # from data.AbstractDatasetClass import AbstractDatasetClass
 from src.dataset_classes.robustVision_dataset import RobustVisionDataset
 from src.models.FOVAL.utilities import create_optimizer, analyzeResiduals
-from src.models.FOVAL.foval import Foval
+from src.models.FOVAL.foval import FOVAL
 from torch.cuda.amp import autocast, GradScaler
 
 
@@ -101,7 +101,7 @@ class FOVALTrainer:
         print("Hyper parameters: ", hyper_parameters)
 
     def initialize_model(self):
-        self.model = Foval(device=self.device, feature_count=self.feature_count).to(self.device)
+        self.model = FOVAL().to(self.device)
         self.model.initialize(
             input_size=self.feature_count,
             fc1_dim=self.hyperparameters['fc1_dim'],
