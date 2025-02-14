@@ -167,7 +167,7 @@ def getFeatureList(path):
 if __name__ == '__main__':
     # Parameterize MODEL and DATASET folders
     paths = build_paths(BASE_DIR)
-    num_epochs = 30
+    num_epochs = 300
     # == == == == == == == == == == == == == == == == == == == == == == == == == == == == == == == == == == == == == == ==
     # 1. Define Dataset
     # == == == == == == == == == == == == == == == == == == == == == == == == == == == == == == == == == == == == == == ==
@@ -197,7 +197,6 @@ if __name__ == '__main__':
     if MODEL == "FOVAL":
         trainer = FOVALTrainer(config_path=paths["config_path"], dataset=dataset, device=device,
                                feature_names=input_features, save_intermediates_every_epoch=False)
-        # trainer.setup()
 
     # 1. Baseline performance evaluation
     print(f" 1. Testing baseline {MODEL} on dataset {datasetName}")

@@ -7,12 +7,14 @@ import pandas as pd
 from memory_profiler import memory_usage
 import torch
 
-from src.A1_OLD_AutoML_DeepACTIF import A1_AutoDeepACTIF_AnalyzerBackprop
-from src.A2_DeepACTIFAnalyzerForward_old import A2_DeepACTIF_Forward_OLD
-from src.A3_AutoML_DeepACTIF import A3_AutoML_DeepACTIF
-from src.A4_DeepACTIFAggregatorV1 import A4_DeepACTIF_SingleLayer
-from src.A5_AutoML_BayesInference import A5_BayesianInference
-from src.A6_AutoML_BayesInference_Optim import A6_BayesianInference_Optim
+from Archiv.A1_OLD_AutoML_DeepACTIF import A1_AutoDeepACTIF_AnalyzerBackprop
+from Archiv.A2_DeepACTIFAnalyzerForward_old import A2_DeepACTIF_Forward_OLD
+from Archiv.A3_AutoML_DeepACTIF import A3_AutoML_DeepACTIF
+from Archiv.A4_DeepACTIFAggregatorV1 import A4_DeepACTIF_SingleLayer
+from Archiv.A5_AutoML_BayesInference import A5_BayesianInference
+from Archiv.A6_AutoML_BayesInference_Optim import A6_BayesianInference_Optim
+from src.DeepACTIF_FullModel_Backprop_V1 import DeepACTIF_FullModel_Backprop
+from src.DeepACTIF_FullModel_ForwardOnly_V1 import DeepACTIF_V1_FullModel_ForwardOnly
 from src.models.FOVAL.foval_preprocessor import input_features
 import json
 from src.models.FOVAL.foval import Foval
@@ -77,12 +79,13 @@ class FeatureRankingsCreator:
         self.memory_data = []
         self.bayes_analyzer = None
         self.methods = [
-            # '1_DeepACTIF_FULL_OLD', #error
+            # '1_DeepACTIF_FullModel_Backprop',  #error
             # '2_DeepACTIF_Forward_OLD',
-            '3_AutoML_DeepACTIF',     # error
+            '3_DeepACTIF_FullModel_ForwardOnly',  # error
             # '4_DeepACTIF_AggregatorV1',
             # '5_BayesianInference',
             # '6_BayesianInference_Optim',
+            'deepactif_lstm_INV',
 
         ]
 
@@ -100,20 +103,31 @@ class FeatureRankingsCreator:
         all_execution_times = []
         all_memory_usages = []
 
-        if method is "1_DeepACTIF_FULL_OLD":
-            self.analyzer = A1_AutoDeepACTIF_AnalyzerBackprop(features=self.selected_features,
-                                                              model=self.trainer.model,
-                                                              device=self.device,
-                                                              use_gaussian_spread=True)
+        if method is "1_DeepACTIF_FullModel_Backprop":
+            # self.analyzer = A1_AutoDeepACTIF_AnalyzerBackprop(features=self.selected_features,
+            #                                                   model=self.trainer.model,
+            #                                                   device=self.device,
+            #                                                   use_gaussian_spread=True)
 
+            self.analyzer = DeepACTIF_FullModel_Backprop(features=self.selected_features,
+                                                         model=self.trainer.model,
+                                                         device=self.device,
+                                                         use_gaussian_spread=False)
         elif method == '2_DeepACTIF_Forward_OLD':
             self.analyzer = A2_DeepACTIF_Forward_OLD(model=self.trainer.model, features=self.selected_features)
-        elif method == '3_AutoML_DeepACTIF':
-            self.analyzer = A3_AutoML_DeepACTIF(model=self.trainer.model,
-                                                features=self.selected_features,
-                                                device=self.device,
-                                                use_gaussian_spread=True)
+
+        elif method == '3_DeepACTIF_FullModel_ForwardOnly':
+            # self.analyzer = A3_AutoML_DeepACTIF(model=self.trainer.model,
+            #                                     features=self.selected_features,
+            #                                     device=self.device,
+            #                                     use_gaussian_spread=True)
+            self.analyzer = DeepACTIF_V1_FullModel_ForwardOnly(model=self.trainer.model,
+                                                               features=self.selected_features,
+                                                               device=self.device,
+                                                               use_gaussian_spread=True)
+
         elif method == '4_DeepACTIF_AggregatorV1':
+            # A4_DeepACTIF SingleLayer, No Backprop, single Interpolation
             self.analyzer = A4_DeepACTIF_SingleLayer(model=self.trainer.model,
                                                      selected_features=self.selected_features, device=self.device)
         elif method == '5_BayesianInference':
@@ -217,9 +231,9 @@ class FeatureRankingsCreator:
             'autoDeepactifFull': lambda: self.compute_autodeepactif_full(valid_loader),
             'bayesDeepactif': lambda: self.compute_bayesACTIF(valid_loader),
 
-            '1_DeepACTIF_FULL_OLD': lambda: self.compute_deepactif_(valid_loader, method=method),
+            '1_DeepACTIF_FullModel_Backprop': lambda: self.compute_deepactif_(valid_loader, method=method),
             '2_DeepACTIF_Forward_OLD': lambda: self.compute_deepactif_(valid_loader, method=method),
-            '3_AutoML_DeepACTIF': lambda: self.compute_deepactif_(valid_loader, method=method),
+            '3_DeepACTIF_FullModel_ForwardOnly': lambda: self.compute_deepactif_(valid_loader, method=method),
             '4_DeepACTIF_AggregatorV1': lambda: self.compute_deepactif_(valid_loader, method=method),
             '5_BayesianInference': lambda: self.compute_deepactif_(valid_loader, method=method),
             '6_BayesianInference_Optim': lambda: self.compute_deepactif_(valid_loader, method=method),
@@ -697,7 +711,7 @@ class FeatureRankingsCreator:
 
     def compute_deepactif_(self, valid_loader, method):
 
-        if method == '1_DeepACTIF_FULL_OLD':
+        if method == '1_DeepACTIF_FullModel_Backprop':
             raw_np = self.analyzer.analyze(dataloader=valid_loader)
 
             # Ensure conversion to NumPy
@@ -715,7 +729,7 @@ class FeatureRankingsCreator:
 
         elif method == '2_DeepACTIF_Forward_OLD':
             results = self.analyzer.analyze(dataloader=valid_loader, device=self.device)
-        elif method == '3_AutoML_DeepACTIF':
+        elif method == '3_DeepACTIF_FullModel_ForwardOnly':
 
             # BACKUP WORKING
             # # Um raw Importances mit Zeitinformation zu erhalten, setze return_raw=True:
@@ -753,7 +767,8 @@ class FeatureRankingsCreator:
 
             # Aggregiere die raw Importances über die Zeit mittels invers gewichteter Methode:
             # INV or NONE: inverted weighted mean or simply mean across time
-            aggregated_importances = self.analyzer.aggregate_importances(raw_importances.cpu().detach().numpy(), method='INV')
+            aggregated_importances = self.analyzer.aggregate_importances(raw_importances.cpu().detach().numpy(),
+                                                                         method=None)
 
             # Aggregiere über die Zeitdimension (Achse 1)
             aggregated_over_time = np.mean(aggregated_importances, axis=1)  # (samples, features)

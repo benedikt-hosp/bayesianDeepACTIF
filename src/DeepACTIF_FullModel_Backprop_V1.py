@@ -3,12 +3,14 @@ import torch.nn.functional as F
 import torch.nn as nn
 import numpy as np
 
+from src.models.FOVAL.foval import MaxOverTimePooling
 
-class A1_AutoDeepACTIF_AnalyzerBackprop:
+
+class DeepACTIF_FullModel_Backprop:
     def __init__(self, model, features, device, use_gaussian_spread=True):
         """
         Initialize the analyzer.
-        
+
         Args:
             model (torch.nn.Module): The trained model.
             features (list): List of feature names.
@@ -36,14 +38,14 @@ class A1_AutoDeepACTIF_AnalyzerBackprop:
                 self.layer_types[name] = type(module).__name__
 
                 # 🔹 Store max-pooling indices correctly
-                if isinstance(module, (nn.AdaptiveMaxPool1d, nn.MaxPool1d)):
+                if isinstance(module, (nn.AdaptiveMaxPool1d, nn.MaxPool1d, MaxOverTimePooling)):
                     _, max_idx = torch.max(output, dim=1)  # Shape (batch, features)
                     self.max_indices[name] = max_idx  # 🔹 Save indices by layer name
 
             return hook
 
         for name, layer in self.model.named_modules():
-            if isinstance(layer, (nn.Linear, nn.LSTM, nn.AdaptiveMaxPool1d, nn.MaxPool1d)):
+            if isinstance(layer, (nn.Linear, nn.LSTM, nn.AdaptiveMaxPool1d, nn.MaxPool1d, MaxOverTimePooling)):
                 layer.register_forward_hook(hook_fn(name, layer))
 
     def backpropagate_max_pooling(self, importance, activations, layer_name):
@@ -52,7 +54,7 @@ class A1_AutoDeepACTIF_AnalyzerBackprop:
         - `importance`: Shape (batch, features)
         - `activations`: Shape (batch, timesteps, features)
         """
-        print(f"🔄 Backpropagating through Max Pooling layer: {layer_name}")
+        # print(f"🔄 Backpropagating through Max Pooling layer: {layer_name}")
 
         # Ensure `max_indices` is available
         if layer_name not in self.max_indices:
@@ -81,7 +83,7 @@ class A1_AutoDeepACTIF_AnalyzerBackprop:
                 for f in range(num_features):
                     expanded_importance[b, max_indices[b, f], f] = importance[b, f]
 
-        print(f"✅ Final importance shape after Max Pooling: {expanded_importance.shape}")
+        # print(f"✅ Final importance shape after Max Pooling: {expanded_importance.shape}")
         return expanded_importance
 
     def forward_pass_with_importance(self, sample):
@@ -99,7 +101,7 @@ class A1_AutoDeepACTIF_AnalyzerBackprop:
         if accumulated_importance.dim() == 1:
             accumulated_importance = accumulated_importance.unsqueeze(0)  # Add batch dim
 
-        print(f"✅ Initial importance shape from {last_layer_name}: {accumulated_importance.shape}")
+        # print(f"✅ Initial importance shape from {last_layer_name}: {accumulated_importance.shape}")
 
         # 🔄 Backpropagate through layers
         for layer_name in reversed(list(self.activations.keys())):
@@ -138,13 +140,12 @@ class A1_AutoDeepACTIF_AnalyzerBackprop:
         if not all_importances:
             raise ValueError("❌ No feature importances calculated. Check sample processing!")
 
-        print("Shape of importances: ", all_importances)
+        # print("Shape of importances: ", all_importances)
 
         all_importances = torch.cat(all_importances, dim=0)  # Shape: (num_samples, num_features)
 
-        print(f"✅ Final shape of all_attributions: {all_importances.shape}")
+        # print(f"✅ Final shape of all_attributions: {all_importances.shape}")
         return all_importances  # Shape: (num_samples, num_features)
-
 
         # """
         # Runs DeepACTIF-NG over validation data to compute feature importance **per sample**.
@@ -265,7 +266,6 @@ class A1_AutoDeepACTIF_AnalyzerBackprop:
         results = [{'feature': self.selected_features[i], 'attribution': importance[i]} for i in
                    range(len(self.selected_features))]
 
-
         # results = [
         #     [{'feature': self.selected_features[i], 'attribution': importance[sample_idx, i]}
         #      for i in range(len(self.selected_features))]
@@ -302,7 +302,7 @@ class A1_AutoDeepACTIF_AnalyzerBackprop:
         """
         Backpropagates importance through a Linear layer.
         """
-        print(f"🔄 Backpropagating through Linear layer: {layer_name}")
+        # print(f"🔄 Backpropagating through Linear layer: {layer_name}")
 
         # Ensure correct shape
         if importance.dim() == 1:  # If (features,), add batch dim
@@ -313,7 +313,7 @@ class A1_AutoDeepACTIF_AnalyzerBackprop:
 
         # Interpolate back to match previous layer shape
         target_size = (activations.shape[-1],)
-        print(f"⚠ Interpolating Linear layer from {importance.shape[-1]} to {target_size}")
+        # print(f"⚠ Interpolating Linear layer from {importance.shape[-1]} to {target_size}")
 
         importance = F.interpolate(
             importance,
@@ -322,14 +322,14 @@ class A1_AutoDeepACTIF_AnalyzerBackprop:
             align_corners=False
         ).squeeze(1)  # Remove extra dim
 
-        print(f"✅ Backpropagated Linear Importance Shape: {importance.shape}")
+        # print(f"✅ Backpropagated Linear Importance Shape: {importance.shape}")
         return importance
 
     def backpropagate_lstm(self, importance, activations, layer_name):
         """
         Backpropagates importance through an LSTM layer.
         """
-        print(f"🔄 Backpropagating through LSTM layer: {layer_name}")
+        #print(f"🔄 Backpropagating through LSTM layer: {layer_name}")
 
         batch_size, timesteps, num_features = activations.shape  # (1, 10, 150)
 
@@ -341,15 +341,15 @@ class A1_AutoDeepACTIF_AnalyzerBackprop:
             # 🔹 Detected (batch, features, 1) instead of (batch, 1, features)
             importance = importance.permute(0, 2, 1)  # Convert (batch, features, 1) → (batch, 1, features)
 
-        print(f"✅ Adjusted importance shape before interpolation: {importance.shape}")  # Expected: (1, 1, 150)
+        # print(f"✅ Adjusted importance shape before interpolation: {importance.shape}")  # Expected: (1, 1, 150)
 
         # 🚀 Reshape importance for interpolation
         importance = importance.unsqueeze(1)  # Add a channel dimension → (batch, C=1, 1, features)
 
         # 🔹 Target shape should be (batch, C=1, timesteps, features)
-        #target_size = (timesteps, num_features)  # (10, 150)
+        # target_size = (timesteps, num_features)  # (10, 150)
         target_size = (timesteps, len(self.selected_features))  # (10, 150)
-        print(f"✅ Interpolating to match input shape {target_size}")
+        #print(f"✅ Interpolating to match input shape {target_size}")
 
         # 🚀 Perform interpolation correctly
         importance = F.interpolate(
@@ -359,7 +359,7 @@ class A1_AutoDeepACTIF_AnalyzerBackprop:
             align_corners=False
         ).squeeze(1)  # Remove channel dim → (batch, timesteps, features)
 
-        print(f"✅ Final importance shape after LSTM backpropagation: {importance.shape}")
+        #print(f"✅ Final importance shape after LSTM backpropagation: {importance.shape}")
         return importance  # Expected: (batch, timesteps, features)
 
     def weighted_interpolation(self, importance, activations):
@@ -395,6 +395,6 @@ class A1_AutoDeepACTIF_AnalyzerBackprop:
             # Expand to match feature dimension and apply to importance
             spread_importance[i] = gaussian_weights[:, None] * importance[i]  # Shape: (timesteps, features)
 
-        print(
-            f"✅ Final importance shape after max-pooling backpropagation: {spread_importance.shape}")  # Expected: (batch, timesteps, features)
+        # print(
+        #     f"✅ Final importance shape after max-pooling backpropagation: {spread_importance.shape}")  # Expected: (batch, timesteps, features)
         return spread_importance

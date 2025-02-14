@@ -5,8 +5,7 @@ import numpy as np
 
 from src.models.FOVAL.foval import MaxOverTimePooling
 
-
-class DeepACTIF_V1_FullModel_ForwardOnly:
+class DeepACTIF_V1_FullModel_ForwardOnly_Orig:
     def __init__(self, model, features, device, use_gaussian_spread=True):
         """
         Initialize the analyzer.
@@ -271,47 +270,247 @@ class DeepACTIF_V1_FullModel_ForwardOnly:
         return spread_importance
 
     # ?
-    def aggregate_and_return(self, sample_importances):
+    # def aggregate_and_return(self, sample_importances):
+    #     """
+    #     Aggregiert die berechneten Feature-Importances und formatiert sie im SHAP-Stil.
+    #
+    #     Args:
+    #         sample_importances (List[torch.Tensor]): Liste von Feature-Importance-Vektoren pro Batch.
+    #
+    #     Returns:
+    #         List[List[Dict]]: Liste pro Sample, die ein Dictionary mit 'feature' und 'attribution' enthält.
+    #     """
+    #     # Prüfe, ob sample_importances nicht leer ist
+    #     if (isinstance(sample_importances, list) and len(sample_importances) == 0) or \
+    #             (isinstance(sample_importances, torch.Tensor) and sample_importances.numel() == 0):
+    #         raise ValueError("❌ No feature importances calculated from the data.")
+    #
+    #     # Konvertiere alle Tensoren in NumPy-Arrays (sofern nötig)
+    #     all_importances = [imp.detach().cpu().numpy() if isinstance(imp, torch.Tensor) else imp
+    #                        for imp in sample_importances]
+    #
+    #     # Staple alle Ergebnisse zu einem Array (Annahme: shape (num_batches, num_features))
+    #     all_attributions = np.vstack(all_importances)
+    #
+    #     # Optional: Debug-Ausgabe, um zu prüfen, dass all_attributions den erwarteten Inhalt hat
+    #     if np.isnan(all_attributions).any():
+    #         print("⚠️ Warning: NaN values detected in all_attributions!")
+    #         all_attributions = np.nan_to_num(all_attributions, nan=0.0)
+    #
+    #     print("All Attributions: ", all_attributions)
+    #
+    #     # we should return samples, timesteps, features
+    #
+    #     # next: mean over timesteps so we have samples,features
+    #     # Aggregiere mithilfe deiner ACTIF-Methode (hier: calculate_actif_inverted_weighted_mean)
+    #     # Hinweis: Falls du pro Sample eine Aggregation möchtest, muss die Dimension stimmen.
+    #     # Ein einfaches Beispiel: Wir nehmen an, all_attributions hat bereits die Form (num_samples, num_features)
+    #     importance = self.aggregate_importances(all_attributions)
+    #
+    #     # Erstelle das Ergebnis im SHAP-ähnlichen Format: Eine Liste von Dicts pro Sample.
+    #     results = [{'feature': self.selected_features[i], 'attribution': all_attributions[i]} for i in
+    #                range(len(self.selected_features))]
+    #
+    #     print("Results from Class: ", results)
+    #
+    #     return results
+
+import torch
+import torch.nn.functional as F
+import torch.nn as nn
+import numpy as np
+
+from src.models.FOVAL.foval import MaxOverTimePooling
+
+
+class DeepACTIF_V1_FullModel_ForwardOnly:
+    def __init__(self, model, features, device, use_gaussian_spread=True):
         """
-        Aggregiert die berechneten Feature-Importances und formatiert sie im SHAP-Stil.
+        Initialize the analyzer.
 
         Args:
-            sample_importances (List[torch.Tensor]): Liste von Feature-Importance-Vektoren pro Batch.
+            model (torch.nn.Module): The trained model.
+            features (list): List of feature names.
+            device (str): The device to run the analysis on.
+            use_gaussian_spread (bool): Flag to toggle between Gaussian spreading and equal distribution.
+        """
+        self.model = model
+        self.selected_features = features if features is not None else []
+        self.device = device
+        self.use_gaussian_spread = use_gaussian_spread  # 🔹 Enable Gaussian spreading
+
+        self.activations = {}
+        self.layer_types = {}
+        self.max_indices = {}  # 🔹 Store max-pooling indices
+        self.register_hooks()
+
+    def register_hooks(self):
+        """Registers forward hooks to store activations and max-pooling indices."""
+        def hook_fn(name, module):
+            def hook(module, input, output):
+                if isinstance(output, tuple):  # Handle LSTM outputs
+                    output = output[0]
+                self.activations[name] = output.detach()
+                self.layer_types[name] = type(module).__name__
+
+                if isinstance(module, MaxOverTimePooling):
+                    _, max_idx = torch.max(output, dim=1)
+                    self.max_indices[name] = max_idx
+
+            return hook
+
+        for name, layer in self.model.named_modules():
+            if isinstance(layer, (nn.Linear, nn.LSTM, nn.AdaptiveMaxPool1d, nn.MaxPool1d)):
+                layer.register_forward_hook(hook_fn(name, layer))
+
+    def analyze(self, dataloader, device, return_raw=False, method="INV", use_gaussian=False):
+        """
+        Runs feature importance analysis with different aggregation methods.
+
+        Args:
+            dataloader: DataLoader for input data.
+            device: PyTorch device ("cuda" or "cpu").
+            return_raw (bool): If True, returns raw time-dependent importances.
+            method (str): Importance aggregation method ("INV" for inverse weighting, "MEAN" for simple averaging).
+            use_gaussian (bool): If True, applies Gaussian spreading.
 
         Returns:
-            List[List[Dict]]: Liste pro Sample, die ein Dictionary mit 'feature' und 'attribution' enthält.
+            Aggregated feature importances.
         """
-        # Prüfe, ob sample_importances nicht leer ist
-        if (isinstance(sample_importances, list) and len(sample_importances) == 0) or \
-                (isinstance(sample_importances, torch.Tensor) and sample_importances.numel() == 0):
-            raise ValueError("❌ No feature importances calculated from the data.")
+        all_importances = []
 
-        # Konvertiere alle Tensoren in NumPy-Arrays (sofern nötig)
-        all_importances = [imp.detach().cpu().numpy() if isinstance(imp, torch.Tensor) else imp
-                           for imp in sample_importances]
+        for batch_idx, batch in enumerate(dataloader):
+            if isinstance(batch, (list, tuple)):
+                batch = batch[0]
+            batch = batch.to(device, dtype=torch.float32)
+            importance = self.forward_pass_with_importance(batch, return_raw=True)
 
-        # Staple alle Ergebnisse zu einem Array (Annahme: shape (num_batches, num_features))
-        all_attributions = np.vstack(all_importances)
+            if importance is None or torch.isnan(importance).any():
+                print(f"Skipping batch {batch_idx}, importance contains NaN!")
+                continue
 
-        # Optional: Debug-Ausgabe, um zu prüfen, dass all_attributions den erwarteten Inhalt hat
-        if np.isnan(all_attributions).any():
-            print("⚠️ Warning: NaN values detected in all_attributions!")
-            all_attributions = np.nan_to_num(all_attributions, nan=0.0)
+            all_importances.append(importance)
 
-        print("All Attributions: ", all_attributions)
+        if not all_importances:
+            raise ValueError("❌ No valid feature importances calculated!")
 
-        # we should return samples, timesteps, features
+        all_importances = torch.cat(all_importances, dim=0)  # Shape: (num_samples, timesteps, num_features)
 
-        # next: mean over timesteps so we have samples,features
-        # Aggregiere mithilfe deiner ACTIF-Methode (hier: calculate_actif_inverted_weighted_mean)
-        # Hinweis: Falls du pro Sample eine Aggregation möchtest, muss die Dimension stimmen.
-        # Ein einfaches Beispiel: Wir nehmen an, all_attributions hat bereits die Form (num_samples, num_features)
-        importance = self.aggregate_importances(all_attributions)
+        if use_gaussian:
+            all_importances = self.weighted_interpolation(all_importances.mean(dim=1), all_importances)
 
-        # Erstelle das Ergebnis im SHAP-ähnlichen Format: Eine Liste von Dicts pro Sample.
-        results = [{'feature': self.selected_features[i], 'attribution': all_attributions[i]} for i in
-                   range(len(self.selected_features))]
+        if return_raw:
+            return all_importances
 
-        print("Results from Class: ", results)
+        aggregated_importance = self.aggregate_importances(all_importances, method=method)
 
-        return results
+        print(f"✅ Method Used: {method}, Output Shape: {aggregated_importance.shape}")
+        return aggregated_importance
+
+    def forward_pass_with_importance(self, inputs, return_raw=False):
+        """Performs forward pass and computes feature importances."""
+        self.model.eval()
+        activations = inputs
+        T = inputs.shape[1]
+        accumulated_importance = None
+
+        for name, layer in self.model.named_children():
+            if isinstance(layer, nn.LSTM):
+                activations, _ = layer(activations)
+                layer_importance = torch.abs(activations)
+
+            elif isinstance(layer, nn.Linear):
+                activations = layer(activations)
+                if activations.dim() == 2:
+                    layer_importance = torch.abs(activations).unsqueeze(1).expand(-1, T, -1)
+                else:
+                    layer_importance = torch.abs(activations)
+
+            elif isinstance(layer, MaxOverTimePooling):
+                layer_input = activations
+                activations = layer(layer_input)
+                _, max_indices = layer_input.max(dim=1)
+                layer_importance = torch.zeros_like(layer_input)
+                layer_importance.scatter_(1, max_indices.unsqueeze(1), 1.0)
+                layer_importance *= torch.abs(layer_input)
+
+            else:
+                continue
+
+            N, T_current, orig_features = layer_importance.shape
+            reshaped = layer_importance.reshape(N * T_current, 1, orig_features)
+            interpolated = F.interpolate(reshaped, size=len(self.selected_features),
+                                         mode="linear", align_corners=False)
+            interpolated_importance = interpolated.reshape(N, T_current, len(self.selected_features))
+
+            if accumulated_importance is None:
+                accumulated_importance = interpolated_importance
+            else:
+                accumulated_importance += interpolated_importance
+
+        if return_raw:
+            return accumulated_importance
+        else:
+            return accumulated_importance.mean(dim=1)
+
+    def aggregate_importances(self, all_attributions, epsilon=1e-6, method='INV'):
+        """
+        Aggregates importances across time using different methods.
+
+        Args:
+            all_attributions (np.ndarray): Shape (num_samples, timesteps, num_features).
+            method (str): Aggregation method ("INV" for inverse weighted, "MEAN" for simple mean).
+
+        Returns:
+            np.ndarray: Aggregated importances (num_samples, num_features).
+        """
+        if method == "INV":
+            mean_activation = np.mean(np.abs(all_attributions), axis=1)
+            std_activation = np.std(np.abs(all_attributions), axis=1)
+            normalized_mean = (mean_activation - np.min(mean_activation)) / (np.max(mean_activation) - np.min(mean_activation) + epsilon)
+            inverse_normalized_std = 1 - (std_activation - np.min(std_activation)) / (np.max(std_activation) - np.min(std_activation) + epsilon)
+            aggregated_importance = (normalized_mean + inverse_normalized_std) / 2
+        else:
+            aggregated_importance = np.mean(all_attributions, axis=1)
+
+        return aggregated_importance
+
+    def weighted_interpolation(self, importance, activations):
+        """
+        Applies Gaussian spreading over time.
+
+        Args:
+            importance (torch.Tensor): Feature importance.
+            activations (torch.Tensor): Model activations.
+
+        Returns:
+            torch.Tensor: Adjusted importance.
+        """
+        batch_size, timesteps, num_features = activations.shape
+        max_indices = activations.abs().max(dim=1).indices
+        spread_importance = torch.zeros_like(activations)
+
+        for i in range(batch_size):
+            max_t = max_indices[i].item()
+            time_range = torch.arange(timesteps, device=importance.device)
+            gaussian_weights = torch.exp(-((time_range - max_t) ** 2) / (2 * (timesteps / 5) ** 2))
+            gaussian_weights = gaussian_weights / gaussian_weights.sum()
+            spread_importance[i] = gaussian_weights[:, None] * importance[i]
+
+        return spread_importance
+
+    # Start: 5
+    # Hilfsfunktionen für raw Ergebnisse:
+    def most_important_timestep(self, all_attributions):
+        """
+        Ermittelt pro Sample und pro Feature den Timestep mit maximalem absoluten Wert.
+
+        Args:
+            all_attributions (np.ndarray): Array mit Form (num_samples, timesteps, num_features).
+
+        Returns:
+            np.ndarray: Array mit Form (num_samples, num_features) mit den Indizes des wichtigsten Timesteps.
+        """
+        # raw_importances: Tensor mit Form (num_samples, timesteps, num_features)
+        # all_attributions = all_attributions.cpu().detach().numpy()
+        return np.argmax(np.abs(all_attributions), axis=1)
