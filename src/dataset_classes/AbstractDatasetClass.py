@@ -139,3 +139,28 @@ class AbstractDatasetClass(ABC):
 
     def get_data(self):
         return self.input_data
+
+    # @abstractmethod
+    # def get_random_samples(self, num_samples, subjects):
+    #     """
+    #     Wählt num_samples zufällige Samples aus den angegebenen Subjects aus und gibt sie als DataFrame zurück.
+    #
+    #     Args:
+    #         num_samples (int): Anzahl der zu wählenden Samples.
+    #         subjects (list): Liste der SubjectIDs, aus denen die Samples ausgewählt werden sollen.
+    #
+    #     Returns:
+    #         pd.DataFrame: DataFrame mit den ausgewählten zufälligen Samples.
+    #     """
+    #     # Filtere die Daten auf die gewünschten Subjects
+    #     filtered_data = self.input_data[self.input_data['SubjectID'].isin(subjects)]
+    #
+    #     if filtered_data.empty:
+    #         raise ValueError("Keine Daten für die angegebenen Subjects gefunden.")
+    #
+    #     # Wenn die Anzahl der gewünschten Samples größer ist als verfügbar, wähle mit Ersatz
+    #     replace = num_samples > len(filtered_data)
+    #
+    #     random_samples = filtered_data.sample(n=num_samples, replace=replace, random_state=42)
+    #
+    #     return random_samples

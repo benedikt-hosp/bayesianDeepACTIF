@@ -39,7 +39,7 @@ class RobustVisionDataset(AbstractDatasetClass):
         self.maxDepth = 3
         self.subject_scaler = RobustScaler()  # or any other scaler
         self.feature_scaler = None
-        self.isGIW= False # für mixed muss das auf True stehen sonst False
+        self.isGIW = False  # für mixed muss das auf True stehen sonst False
         self.current_features = input_features
         self.target_scaler = None
         self.target_column_name = 'Gt_Depth'
@@ -424,7 +424,6 @@ class RobustVisionDataset(AbstractDatasetClass):
     #
     #     return train_loader, val_loader, input_size
 
-
     # def prepare_loader(self, subject_index, batch_size, is_train=False):
     #     subjects = subject_index if isinstance(subject_index, list) else [subject_index]
     #     data = self.input_data[self.input_data['SubjectID'].isin(subjects)]
@@ -458,24 +457,46 @@ class RobustVisionDataset(AbstractDatasetClass):
     #
     #     return data_loader
 
-
-    def get_data_loader(self, train_index, val_index=None, test_index=None, batch_size=100):
+    def get_data_loader(self, train_index=None, val_index=None, test_index=None, batch_size=100):
         """
         Create and return data loaders for training and validation datasets.
         """
-        train_loader = self.prepare_loader(train_index, batch_size, is_train=True)
-        val_loader = self.prepare_loader(val_index, batch_size, is_train=False) if val_index is not None else None
+        print("Train index: ", train_index)
+        print("Val index: ", val_index)
+        input_size = 3
+        if len(train_index) > 0:
+            train_loader = self.prepare_loader(train_index, batch_size, is_train=True)
+            # Get input size dynamically
+            # input_size = train_loader.dataset.tensors[0].shape[1]
+            # Correct way to get input_size from TimeSeriesDataset
+            first_sample, _ = train_loader.dataset[0]  # Get first (features, target) tuple
+            input_size = first_sample.shape[1]  # Extract feature dimension
+        else:
+            train_loader = None
 
-        # Get input size dynamically
-        # input_size = train_loader.dataset.tensors[0].shape[1]
-        # Correct way to get input_size from TimeSeriesDataset
-        first_sample, _ = train_loader.dataset[0]  # Get first (features, target) tuple
-        input_size = first_sample.shape[1]  # Extract feature dimension
+        if val_index is not None:
+            val_loader = self.prepare_loader(val_index, batch_size, is_train=False) if val_index is not None else None
+            # Get input size dynamically
+            # input_size = train_loader.dataset.tensors[0].shape[1]
+            # Correct way to get input_size from TimeSeriesDataset
+            first_sample, _ = val_loader.dataset[0]  # Get first (features, target) tuple
+            input_size = first_sample.shape[1]  # Extract feature dimension
+        else:
+            val_loader = None
 
         return train_loader, val_loader, input_size
 
     def prepare_loader(self, subject_index, batch_size, is_train=False):
-        subjects = subject_index if isinstance(subject_index, list) else [subject_index]
+        # subjects = subject_index if isinstance(subject_index, list) else [subject_index]
+        # Convert subject_index to a list if it is a NumPy array
+        if isinstance(subject_index, np.ndarray):
+            subjects = subject_index.tolist()
+        elif not isinstance(subject_index, list):
+            subjects = [subject_index]
+        else:
+            subjects = subject_index
+
+        print("subjects: ", subjects)
         data = self.input_data[self.input_data['SubjectID'].isin(subjects)]
 
         if data.empty:
@@ -487,7 +508,8 @@ class RobustVisionDataset(AbstractDatasetClass):
         data = self.normalize_data(data)
 
         # Apply transformations only if required
-        data = self.calculate_transformations_for_features(data) if is_train else self.apply_transformations_on_features(data)
+        data = self.calculate_transformations_for_features(
+            data) if is_train else self.apply_transformations_on_features(data)
 
         # Scale target
         data = self.scale_target(data, isTrain=is_train)

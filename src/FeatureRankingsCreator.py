@@ -4,17 +4,15 @@ import logging
 
 import numpy as np
 import pandas as pd
-import shap
-from tqdm import tqdm
-from captum.attr import IntegratedGradients, FeatureAblation, DeepLift
 from memory_profiler import memory_usage
 import torch
-from torch.cuda.amp import autocast
 
-from src.AutoML_BayesInference import BayesianFeatureImportance
-from src.AutoML_DeepACTIF import AutoDeepACTIF_AnalyzerBackprop
-from src.DeepACTIFAggregatorV1 import DeepACTIFAggregatorV1
-from src.LiveView import LiveVisualizer
+from src.A1_OLD_AutoML_DeepACTIF import A1_AutoDeepACTIF_AnalyzerBackprop
+from src.A2_DeepACTIFAnalyzerForward_old import A2_DeepACTIF_Forward_OLD
+from src.A3_AutoML_DeepACTIF import A3_AutoML_DeepACTIF
+from src.A4_DeepACTIFAggregatorV1 import A4_DeepACTIF_SingleLayer
+from src.A5_AutoML_BayesInference import A5_BayesianInference
+from src.A6_AutoML_BayesInference_Optim import A6_BayesianInference_Optim
 from src.models.FOVAL.foval_preprocessor import input_features
 import json
 from src.models.FOVAL.foval import Foval
@@ -57,6 +55,7 @@ class PyTorchModelWrapper_SHAP:
 
 class FeatureRankingsCreator:
     def __init__(self, modelName, datasetName, dataset, trainer, paths, device):
+        self.analyzer = None
         self.modelName = modelName
         self.paths = paths
         self.device = device
@@ -78,93 +77,13 @@ class FeatureRankingsCreator:
         self.memory_data = []
         self.bayes_analyzer = None
         self.methods = [
-            # 'deepactif_ng',
-            # 'autoDeepactifFull',
-            'bayesDeepactif',
-            #
-            # # ABLATION
-            # 'ablation_MEAN',
-            # 'ablation_MEANSTD',
-            # 'ablation_INV',
-            # 'ablation_PEN',
-            #
-            # # DeepACTIF Input layer
-            # 'deepactif_input_MEAN',
-            # 'deepactif_input_MEANSTD',
-            # 'deepactif_input_INV',
-            # 'deepactif_input_PEN',
-            #
-            # # DeepACTIF LSTM layer
-            # 'deepactif_lstm_MEAN',
-            # 'deepactif_lstm_MEANSTD',
-            # 'deepactif_lstm_INV',
-            # 'deepactif_lstm_PEN',
-            #
-            # # DeepACTIF penultimate layer
-            # 'deepactif_penultimate_MEAN',
-            # 'deepactif_penultimate_MEANSTD',
-            # 'deepactif_penultimate_INV',
-            # 'deepactif_penultimate_PEN',
-            #
-            # # SHUFFLE
-            # 'shuffle_MEAN',
-            # 'shuffle_MEANSTD',
-            # 'shuffle_INV',
-            # 'shuffle_PEN',
-            #
-            # # Deeplift ZERO Baseline
-            # 'deeplift_zero_MEAN',
-            # 'deeplift_zero_MEANSTD',
-            # 'deeplift_zero_INV',
-            # 'deeplift_zero_PEN',
-            #
-            # # Deeplift Random Baseline
-            # 'deeplift_random_MEAN',
-            # 'deeplift_random_MEANSTD',
-            # 'deeplift_random_INV',
-            # 'deeplift_random_PEN',
-            #
-            # # Deeplift Mean Baseline
-            # 'deeplift_mean_MEAN',
-            # 'deeplift_mean_MEANSTD',
-            # 'deeplift_mean_INV',
-            # 'deeplift_mean_PEN',
-            #
-            # # IG Zero Baseline
-            # 'intGrad_zero_MEAN',  # no memory
-            # 'intGrad_zero_MEANSTD',
-            # 'intGrad_zero_INV',
-            # 'intGrad_zero_PEN',
-            #
-            # # IG Random Baseline
-            # 'intGrad_random_MEAN',
-            # 'intGrad_random_MEANSTD',
-            # 'intGrad_random_INV',
-            # 'intGrad_random_PEN',
-            #
-            # # IG MEAN Baseline
-            # 'intGrad_mean_MEAN',
-            # 'intGrad_mean_MEANSTD',
-            # 'intGrad_mean_INV',
-            # 'intGrad_mean_PEN',
-            #
-            # # SHAP MEM
-            # 'shap_mem_MEAN',
-            # 'shap_mem_MEANSTD',
-            # 'shap_mem_INV',
-            # 'shap_mem_PEN',
-            #
-            # # SHAP TIME
-            # 'shap_time_MEAN',
-            # 'shap_time_MEANSTD',
-            # 'shap_time_INV',
-            # 'shap_time_PEN',
-            #
-            # # SHAP PREC
-            # 'shap_prec_MEAN',
-            # 'shap_prec_MEANSTD',
-            # 'shap_prec_INV',
-            # 'shap_prec_PEN',
+            # '1_DeepACTIF_FULL_OLD', #error
+            # '2_DeepACTIF_Forward_OLD',
+            '3_AutoML_DeepACTIF',     # error
+            # '4_DeepACTIF_AggregatorV1',
+            # '5_BayesianInference',
+            # '6_BayesianInference_Optim',
+
         ]
 
     def setup_directories(self):
@@ -181,9 +100,39 @@ class FeatureRankingsCreator:
         all_execution_times = []
         all_memory_usages = []
 
-        if method is "bayesDeepactif":
+        if method is "1_DeepACTIF_FULL_OLD":
+            self.analyzer = A1_AutoDeepACTIF_AnalyzerBackprop(features=self.selected_features,
+                                                              model=self.trainer.model,
+                                                              device=self.device,
+                                                              use_gaussian_spread=True)
+
+        elif method == '2_DeepACTIF_Forward_OLD':
+            self.analyzer = A2_DeepACTIF_Forward_OLD(model=self.trainer.model, features=self.selected_features)
+        elif method == '3_AutoML_DeepACTIF':
+            self.analyzer = A3_AutoML_DeepACTIF(model=self.trainer.model,
+                                                features=self.selected_features,
+                                                device=self.device,
+                                                use_gaussian_spread=True)
+        elif method == '4_DeepACTIF_AggregatorV1':
+            self.analyzer = A4_DeepACTIF_SingleLayer(model=self.trainer.model,
+                                                     selected_features=self.selected_features, device=self.device)
+        elif method == '5_BayesianInference':
+            self.analyzer = A5_BayesianInference(model=self.trainer.model,
+                                                 features=self.selected_features,
+                                                 device=self.device,
+                                                 use_gaussian_spread=True)
+        elif method == '6_BayesianInference_Optim':
+            initial_dataloader, _, input_size = self.getInitialDataLoader(self.subject_list)
+
             # Erzeuge (oder hole) die Singleton-Instanz:
-            self.bayes_analyzer = BayesianFeatureImportance(self.trainer.model, features=self.selected_features, device=self.device)
+            self.analyzer = A6_BayesianInference_Optim(self.trainer.model,
+                                                       features=self.selected_features,
+                                                       device=self.device,
+                                                       use_gaussian_spread=True,
+                                                       initial_dataloader=initial_dataloader)
+        else:
+            print("Method unknwon")
+
             # Angenommen, trainer.model und selected_features sind bereits definiert.
             # self.live_vis = LiveVisualizer(self.selected_features, update_interval=10)
             # self.bayes_analyzer.live_visualizer = self.live_vis
@@ -223,96 +172,18 @@ class FeatureRankingsCreator:
 
         return train_loader, valid_loader, input_size
 
+    def getInitialDataLoader(self, subjects):
+        batch_size = 460
+
+        logging.info(f"All subject(s): {subjects}")
+
+        train_loader, valid_loader, input_size = self.currentDataset.get_data_loader(
+            subjects.tolist(), None, None, batch_size=batch_size)
+
+        return train_loader, valid_loader, input_size
+
     def get_method_function(self, method, valid_loader, load_model=False):
         method_functions = {
-            # Shuffle Methods
-            'shuffle_MEAN': lambda: self.feature_shuffling_importances(valid_loader, actif_variant='MEAN'),
-            'shuffle_MEANSTD': lambda: self.feature_shuffling_importances(valid_loader, actif_variant='MEANSTD'),
-            'shuffle_INV': lambda: self.feature_shuffling_importances(valid_loader, actif_variant='INV'),
-            'shuffle_PEN': lambda: self.feature_shuffling_importances(valid_loader, actif_variant='PEN'),
-
-            # Ablation Methods
-            'ablation_MEAN': lambda: self.ablation(valid_loader, actif_variant='MEAN'),
-            'ablation_MEANSTD': lambda: self.ablation(valid_loader, actif_variant='MEANSTD'),
-            'ablation_INV': lambda: self.ablation(valid_loader, actif_variant='INV'),
-            'ablation_PEN': lambda: self.ablation(valid_loader, actif_variant='PEN'),
-
-            # Captum Integrated Gradients Methods (v1, v2, v3)
-            'intGrad_zero_MEAN': lambda: self.compute_intgrad(valid_loader, baseline='ZEROES', actif_variant='MEAN'),
-            'intGrad_zero_MEANSTD': lambda: self.compute_intgrad(valid_loader, baseline='ZEROES',
-                                                                 actif_variant='MEANSTD'),
-            'intGrad_zero_INV': lambda: self.compute_intgrad(valid_loader, baseline='ZEROES', actif_variant='INV'),
-            'intGrad_zero_PEN': lambda: self.compute_intgrad(valid_loader, baseline='ZEROES', actif_variant='PEN'),
-
-            'intGrad_random_MEAN': lambda: self.compute_intgrad(valid_loader, baseline='RANDOM', actif_variant='MEAN'),
-            'intGrad_random_MEANSTD': lambda: self.compute_intgrad(valid_loader, baseline='RANDOM',
-                                                                   actif_variant='MEANSTD'),
-            'intGrad_random_INV': lambda: self.compute_intgrad(valid_loader, baseline='RANDOM', actif_variant='INV'),
-            'intGrad_random_PEN': lambda: self.compute_intgrad(valid_loader, baseline='RANDOM', actif_variant='PEN'),
-
-            'intGrad_mean_MEAN': lambda: self.compute_intgrad(valid_loader, baseline='MEAN', actif_variant='MEAN'),
-            'intGrad_mean_MEANSTD': lambda: self.compute_intgrad(valid_loader, baseline='MEAN',
-                                                                 actif_variant='MEANSTD'),
-            'intGrad_mean_INV': lambda: self.compute_intgrad(valid_loader, baseline='MEAN', actif_variant='INV'),
-            'intGrad_mean_PEN': lambda: self.compute_intgrad(valid_loader, baseline='MEAN', actif_variant='PEN'),
-
-            # SHAP Values Methods (Running Memory-Efficient)
-            'shap_mem_MEAN': lambda: self.compute_shap(valid_loader, background_size=10, nsamples=50,
-                                                       explainer_type='gradient', actif_variant='MEAN'),
-            'shap_mem_MEANSTD': lambda: self.compute_shap(valid_loader, background_size=10, nsamples=50,
-                                                          explainer_type='gradient', actif_variant='MEANSTD'),
-            'shap_mem_INV': lambda: self.compute_shap(valid_loader, background_size=10, nsamples=50,
-                                                      explainer_type='gradient', actif_variant='INV'),
-            'shap_mem_PEN': lambda: self.compute_shap(valid_loader, background_size=10, nsamples=50,
-                                                      explainer_type='gradient', actif_variant='PEN'),
-
-            # SHAP Values Methods (Running Time-Efficient SHAP)
-            'shap_time_MEAN': lambda: self.compute_shap(valid_loader, background_size=5, nsamples=20,
-                                                        explainer_type='gradient', actif_variant='MEAN'),
-            'shap_time_MEANSTD': lambda: self.compute_shap(valid_loader, background_size=5, nsamples=20,
-                                                           explainer_type='gradient', actif_variant='MEANSTD'),
-            'shap_time_INV': lambda: self.compute_shap(valid_loader, background_size=5, nsamples=20,
-                                                       explainer_type='gradient', actif_variant='INV'),
-            'shap_time_PEN': lambda: self.compute_shap(valid_loader, background_size=5, nsamples=20,
-                                                       explainer_type='gradient', actif_variant='PEN'),
-
-            # SHAP Values Methods (Running High-Precision SHAP)
-            'shap_prec_MEAN': lambda: self.compute_shap(valid_loader, background_size=50, nsamples=1000,
-                                                        explainer_type='deep', actif_variant='MEAN'),
-            'shap_prec_MEANSTD': lambda: self.compute_shap(valid_loader, background_size=50, nsamples=1000,
-                                                           explainer_type='deep', actif_variant='MEANSTD'),
-            'shap_prec_INV': lambda: self.compute_shap(valid_loader, background_size=50, nsamples=1000,
-                                                       explainer_type='deep', actif_variant='INV'),
-            'shap_prec_PEN': lambda: self.compute_shap(valid_loader, background_size=50, nsamples=1000,
-                                                       explainer_type='deep', actif_variant='PEN'),
-
-            # DeepLIFT Methods with Zero, Random, and Mean Baseline Types
-            'deeplift_zero_MEAN': lambda: self.compute_deeplift(valid_loader, baseline_type='ZEROES',
-                                                                actif_variant='MEAN'),
-            'deeplift_zero_MEANSTD': lambda: self.compute_deeplift(valid_loader, baseline_type='ZEROES',
-                                                                   actif_variant='MEANSTD'),
-            'deeplift_zero_INV': lambda: self.compute_deeplift(valid_loader, baseline_type='ZEROES',
-                                                               actif_variant='INV'),
-            'deeplift_zero_PEN': lambda: self.compute_deeplift(valid_loader, baseline_type='ZEROES',
-                                                               actif_variant='PEN'),
-
-            'deeplift_random_MEAN': lambda: self.compute_deeplift(valid_loader, baseline_type='RANDOM',
-                                                                  actif_variant='MEAN'),
-            'deeplift_random_MEANSTD': lambda: self.compute_deeplift(valid_loader, baseline_type='RANDOM',
-                                                                     actif_variant='MEANSTD'),
-            'deeplift_random_INV': lambda: self.compute_deeplift(valid_loader, baseline_type='RANDOM',
-                                                                 actif_variant='INV'),
-            'deeplift_random_PEN': lambda: self.compute_deeplift(valid_loader, baseline_type='RANDOM',
-                                                                 actif_variant='PEN'),
-
-            'deeplift_mean_MEAN': lambda: self.compute_deeplift(valid_loader, baseline_type='MEAN',
-                                                                actif_variant='MEAN'),
-            'deeplift_mean_MEANSTD': lambda: self.compute_deeplift(valid_loader, baseline_type='MEAN',
-                                                                   actif_variant='MEANSTD'),
-            'deeplift_mean_INV': lambda: self.compute_deeplift(valid_loader, baseline_type='MEAN',
-                                                               actif_variant='INV'),
-            'deeplift_mean_PEN': lambda: self.compute_deeplift(valid_loader, baseline_type='MEAN',
-                                                               actif_variant='PEN'),
 
             # DeepACTIF V1: Methods (v1, v2, v3)
             'deepactif_input_MEAN': lambda: self.compute_deepactif(valid_loader, hook_location='input',
@@ -345,6 +216,13 @@ class FeatureRankingsCreator:
             'deepactif_ng': lambda: self.compute_deepactif_ng(valid_loader, actif_variant='INV'),
             'autoDeepactifFull': lambda: self.compute_autodeepactif_full(valid_loader),
             'bayesDeepactif': lambda: self.compute_bayesACTIF(valid_loader),
+
+            '1_DeepACTIF_FULL_OLD': lambda: self.compute_deepactif_(valid_loader, method=method),
+            '2_DeepACTIF_Forward_OLD': lambda: self.compute_deepactif_(valid_loader, method=method),
+            '3_AutoML_DeepACTIF': lambda: self.compute_deepactif_(valid_loader, method=method),
+            '4_DeepACTIF_AggregatorV1': lambda: self.compute_deepactif_(valid_loader, method=method),
+            '5_BayesianInference': lambda: self.compute_deepactif_(valid_loader, method=method),
+            '6_BayesianInference_Optim': lambda: self.compute_deepactif_(valid_loader, method=method),
 
         }
 
@@ -483,168 +361,6 @@ class FeatureRankingsCreator:
     # Established Methods
     =======================================================================================
     '''
-    '''
-        Ablation
-    '''
-
-    def ablation(self, valid_loader, actif_variant):
-        """
-        Calculate feature attributions for all subjects using LOOCV.
-
-        Args:
-            trainer (FOVALTrainer): Initialized trainer object.
-            feature_list (list): List of features to use.
-            actif_variant (str): ACTIF variant ('MEAN', 'MEANSTD', etc.).
-
-        Returns:
-            list: Feature attributions for each subject.
-        """
-
-        # self.load_model(self.currentModelName)
-        print(f"INFO: Loaded Model: {self.currentModel.__class__.__name__}")
-        self.currentModel.target_scaler = self.currentDataset.target_scaler
-
-        self.currentModel.eval()  # Put the model into evaluation mode
-
-        total_samples = len(valid_loader.dataset)  # Total number of samples
-        aggregated_attributions = torch.zeros(total_samples, len(self.selected_features), device=self.device)
-
-        start_idx = 0  # To keep track of where to insert the current batch's results
-
-        # Perform ablation
-        feature_ablation = FeatureAblation(lambda input_batch: self.model_wrapper(self.currentModel, input_batch))
-
-        for input_batch, _ in valid_loader:
-            input_batch = input_batch.to(self.device)
-            batch_size = input_batch.size(0)
-
-            # Compute feature attributions for the current batch
-            attributions = feature_ablation.attribute(input_batch)
-
-            # Aggregate the attributions over the samples in the current batch
-            attributions_mean = attributions.mean(dim=1)  # Aggregating over time dimension if necessary
-
-            # Insert the results into the pre-allocated tensor
-            aggregated_attributions[start_idx:start_idx + batch_size] = attributions_mean
-            start_idx += batch_size
-
-        # Average attributions over all samples
-        if start_idx > 0:
-
-            # Call ACTIF variant (e.g., actif_mean) to aggregate the results
-            if actif_variant == 'MEAN':
-                importance = self.calculate_actif_mean(aggregated_attributions.cpu().numpy())
-            elif actif_variant == 'MEANSTD':
-                importance = self.calculate_actif_meanstddev(aggregated_attributions.cpu().numpy())
-            elif actif_variant == 'INV':
-                importance = self.calculate_actif_inverted_weighted_mean(aggregated_attributions.cpu().numpy())
-            elif actif_variant == 'PEN':
-                importance = self.calculate_actif_robust(aggregated_attributions.cpu().numpy())
-            else:
-                raise ValueError(f"Unknown ACTIF variant: {actif_variant}")
-
-        else:
-            logging.error("No data processed in the validation loader for ablation.")
-            return None
-
-        # Ensure that the 'importance' variable is a list or array with the same length as the number of features (cols)
-        if not isinstance(importance, np.ndarray):
-            importance = np.array(importance)  # Convert to numpy array if it isn't one already
-
-        if importance.shape[0] != len(self.selected_features):
-            raise ValueError(
-                f"ACTIF method returned {importance.shape[0]} importance scores, but {len(self.selected_features)} features are expected."
-            )
-
-        # Prepare the results with the aggregated importance
-        results = [{'feature': self.selected_features[i], 'attribution': importance[i]} for i in
-                   range(len(self.selected_features))]
-
-        return results
-
-    '''
-        Deep Lift
-    '''
-
-    def compute_deeplift(self, valid_loader, baseline_type, actif_variant):
-        """
-        Computes feature importance using DeepLIFT and aggregates it based on the selected ACTIF variant.
-        """
-        # List to accumulate attributions
-        all_attributions = []
-        total_instances = 0
-        # self.load_model(self.currentModelName)
-        print(f"INFO: Loaded Model: {self.currentModel.__class__.__name__}")
-
-        self.currentModel.eval()  # Put the model into evaluation mode
-
-        for inputs, _ in valid_loader:
-            inputs = inputs.to(self.device)
-
-            # Define the baseline based on the selected baseline_type
-            if baseline_type == 'ZEROES':
-                baselines = torch.zeros_like(inputs)  # Zero baseline
-            elif baseline_type == 'RANDOM':
-                baselines = torch.rand_like(inputs)  # Random baseline (uniform between 0 and 1)
-            elif baseline_type == 'MEAN':
-                # Compute the mean baseline (per feature) along dimension 0
-                mean_baseline = torch.mean(inputs, dim=0)
-                # Expand the mean_baseline to match the shape of the input
-                baselines = mean_baseline.expand_as(inputs)
-            else:
-                raise ValueError(f"Unknown baseline type: {baseline_type}")
-
-            # Initialize DeepLIFT with the model
-            explainer = DeepLift(self.currentModel)
-
-            # Compute attributions using DeepLIFT with the given baseline
-            attributions = explainer.attribute(inputs, baselines=baselines)
-
-            # Sum across the time steps (dim=1), keeping the batch dimension intact
-            attributions_mean = attributions.sum(
-                dim=1)  # Sum over the time steps, results in shape [batch_size, num_features]
-
-            # After processing the batch, free GPU memory
-            del inputs
-            # del attributions
-            torch.cuda.empty_cache()
-
-            # Append the batch attributions
-            # all_attributions.append(attributions_mean.detach().cpu().numpy())
-            all_attributions.append(attributions_mean.detach())  # Kein Wechsel zu NumPy nötig
-
-            total_instances += attributions_mean.size(0)
-
-        # Concatenate all attributions (to handle batches)
-        if total_instances > 0:
-            aggregated_attributions = np.concatenate(all_attributions, axis=0)  # Shape: [num_samples, num_features]
-
-            # Now, apply the selected ACTIF variant for feature importance aggregation
-            if actif_variant == 'MEAN':
-                importance = self.calculate_actif_mean(aggregated_attributions)
-            elif actif_variant == 'MEANSTD':
-                importance = self.calculate_actif_meanstddev(aggregated_attributions)
-            elif actif_variant == 'INV':
-                importance = self.calculate_actif_inverted_weighted_mean(aggregated_attributions)
-            elif actif_variant == 'PEN':
-                importance = self.calculate_actif_robust(aggregated_attributions)
-            else:
-                raise ValueError(f"Unknown ACTIF variant: {actif_variant}")
-
-            # Ensure that the importance variable is a list or array with the same length as the number of features
-            if not isinstance(importance, np.ndarray):
-                importance = np.array(importance)
-
-            if importance.shape[0] != len(self.selected_features):
-                raise ValueError(
-                    f"ACTIF method returned {importance.shape[0]} importance scores, but {len(self.selected_features)} features are expected."
-                )
-
-            # Prepare the results with the aggregated importance
-            results = [{'feature': self.selected_features[i], 'attribution': importance[i]} for i in
-                       range(len(self.selected_features))]
-
-            return results
 
     '''
         deepactif
@@ -757,421 +473,6 @@ class FeatureRankingsCreator:
         return results
 
     '''
-    Integrated Gradients
-    '''
-
-    def compute_intgrad(self, valid_loader, baseline, actif_variant, steps=100):
-        all_attributions = []  # To accumulate attributions for all samples
-
-        # Load the model and switch to evaluation mode
-        # self.load_model(self.currentModelName)
-        print(f"INFO: Loaded Model: {self.currentModel.__class__.__name__}")
-        self.currentModel.eval()
-
-        # Loop over validation loader
-        for inputs, _ in valid_loader:
-            inputs = inputs.to(self.device)
-
-            # Define baselines based on the type
-            if baseline == 'ZEROES':
-                baseline_type = torch.zeros_like(inputs)
-            elif baseline == 'RANDOM':
-                baseline_type = torch.randn_like(inputs)
-            elif baseline == 'MEAN':
-                baseline_type = torch.mean(inputs, dim=0, keepdim=True).expand_as(inputs)
-            else:
-                raise ValueError(f"Unsupported baseline type: {baseline}")
-
-            # Create Integrated Gradients explainer using self.currentModel
-            explainer = IntegratedGradients(lambda input_batch: self.currentModel(input_batch))
-
-            # Calculate attributions
-            with autocast():
-                with torch.no_grad():
-                    attributions = explainer.attribute(inputs, baselines=baseline_type, n_steps=steps)
-
-            # Move attributions to CPU and convert to NumPy
-            attributions_np = attributions.detach().cpu().numpy()  # Shape should be [batch_size, time_steps, features]
-
-            # Flatten time steps by summing across the time dimension (axis 1)
-            attributions_np = attributions_np.sum(axis=1)  # Shape will be [batch_size, features]
-
-            # Store the attributions for this batch
-            all_attributions.append(attributions_np)
-
-            # Clear memory after processing the batch
-            torch.cuda.empty_cache()
-
-        # Final processing of attributions if there were samples processed
-        if all_attributions:
-            # Concatenate all attributions from different batches
-            aggregated_attributions = np.concatenate(all_attributions,
-                                                     axis=0)  # Shape will be [total_samples, features]
-
-            # Apply the selected ACTIF variant for feature importance aggregation
-            if actif_variant == 'MEAN':
-                importance = self.calculate_actif_mean(aggregated_attributions)
-            elif actif_variant == 'MEANSTD':
-                importance = self.calculate_actif_meanstddev(aggregated_attributions)
-            elif actif_variant == 'INV':
-                importance = self.calculate_actif_inverted_weighted_mean(aggregated_attributions)
-            elif actif_variant == 'PEN':
-                importance = self.calculate_actif_robust(aggregated_attributions)
-            else:
-                raise ValueError(f"Unknown ACTIF variant: {actif_variant}")
-
-            # Ensure that the importance variable is a list or array with the same length as the number of features
-            if not isinstance(importance, np.ndarray):
-                importance = np.array(importance)
-
-            if importance.shape[0] != len(self.selected_features):
-                raise ValueError(
-                    f"ACTIF method returned {importance.shape[0]} importance scores, but {len(self.selected_features)} features are expected."
-                )
-
-            # Prepare the results with the aggregated importance
-            results = [{'feature': self.selected_features[i], 'attribution': importance[i]} for i in
-                       range(len(self.selected_features))]
-
-            return results
-
-        #     # Store the attributions as a dataframe for processing
-        #     attributions_df = pd.DataFrame(importance, index=self.selected_features)
-        #     # Compute the mean absolute attributions for each feature
-        #     mean_abs_attributions = attributions_df.abs().mean()
-        #     # Sort the features by their mean absolute attributions
-        #     feature_importance = mean_abs_attributions.sort_values(ascending=False)
-        #
-        #     # Return the feature importance as a list of dictionaries
-        #     results = [{'feature': feature, 'attribution': attribution} for feature, attribution in
-        #                feature_importance.items()]
-        #     return results
-        # else:
-        #     print("No batches processed.")
-        #     return None
-
-    '''
-        SHAP Values
-    '''
-
-    def compute_shap(self, valid_loader, background_size, nsamples, explainer_type, actif_variant):
-        # self.load_model(self.currentModelName)
-        print(f"INFO: Loaded Model: {self.currentModel.__class__.__name__}")
-
-        shap_values_accumulated = []
-
-        for input_batch, _ in valid_loader:
-            input_batch = input_batch.to(self.device)
-
-            # Choose background data for SHAP (use first few samples)
-            background_data = input_batch[:background_size]
-            # Initialize the appropriate SHAP explainer based on the variant
-            if explainer_type == 'deep':
-                explainer = shap.DeepExplainer(self.currentModel, background_data)
-                shap_values = explainer.shap_values(input_batch, check_additivity=False)
-                shap_values_accumulated.append(shap_values)
-
-            elif explainer_type == 'gradient':
-                explainer = shap.GradientExplainer(self.currentModel, background_data)
-                shap_values = explainer.shap_values(input_batch, )
-                shap_values_accumulated.append(shap_values)
-
-            elif explainer_type == 'kernel':
-                # Use PyTorchModelWrapper_SHAP for KernelExplainer to handle 3D input and aggregate the output
-                model_wrapper = PyTorchModelWrapper_SHAP(self.currentModel, self.device)
-
-                # Convert background data to NumPy and keep it in 3D format
-                background_data_np = background_data.cpu().numpy()
-                explainer = shap.KernelExplainer(model_wrapper, background_data_np)
-
-                # Compute SHAP values
-                shap_values = explainer.shap_values(input_batch.cpu().numpy(), nsamples=nsamples)
-                shap_values_accumulated.append(shap_values)
-
-            else:
-                raise ValueError(f"Unsupported explainer type: {explainer_type}")
-
-        # Concatenate SHAP values across batches
-        shap_values_np = np.concatenate(shap_values_accumulated, axis=0)
-
-        # Reshape SHAP values to match the original input format (num_samples, timesteps, features)
-        shap_values_reshaped = shap_values_np.reshape(-1, 10, 34)
-
-        # Aggregate SHAP values over time steps (axis=1) to get (num_samples, features)
-        mean_shap_values_timesteps = np.mean(shap_values_reshaped, axis=1)
-
-        # Apply the selected ACTIF variant for feature importance aggregation
-        if actif_variant == 'MEAN':
-            importance = self.calculate_actif_mean(mean_shap_values_timesteps)
-        elif actif_variant == 'MEANSTD':
-            importance = self.calculate_actif_meanstddev(mean_shap_values_timesteps)
-        elif actif_variant == 'INV':
-            importance = self.calculate_actif_inverted_weighted_mean(mean_shap_values_timesteps)
-        elif actif_variant == 'PEN':
-            importance = self.calculate_actif_robust(mean_shap_values_timesteps)
-        else:
-            raise ValueError(f"Unknown ACTIF variant: {actif_variant}")
-
-        # Store the SHAP values as a dataframe for processing
-        shap_values_df = pd.DataFrame([importance], columns=self.selected_features)
-
-        # Compute the feature importance based on the ACTIF variant
-        feature_importance = shap_values_df.abs().mean().sort_values(ascending=False)
-
-        # Return the feature importance as a list of dictionaries
-        results = [{'feature': feature, 'attribution': attribution} for feature, attribution in
-                   feature_importance.items()]
-
-        return results
-
-    # SHUFFLING: OLD
-    # def feature_shuffling_importances(self, valid_loader, actif_variant):
-    #     # """
-    #     # Compute feature importances using feature shuffling and apply ACTIF aggregation.
-
-    #     # Args:
-    #     #     valid_loader: DataLoader for validation data (with sequences).
-    #     #     actif_variant: The ACTIF variant to use for aggregation ('MEAN', 'MEANSTD', 'INV', 'PEN').
-
-    #     # Returns:
-    #     #     List of feature importance scores based on feature shuffling and the selected ACTIF variant.
-    #     # """
-    #     # self.load_model(self.currentModelName)
-    #     # print(f"INFO: Loaded Model: {self.currentModel.__class__.__name__}")
-
-    #     # cols = self.selected_features
-    #     # device = next(self.currentModel.parameters()).device  # Ensure we are using the correct device
-
-    #     # # Calculate the baseline MAE (Mean Absolute Error)
-    #     # overall_baseline_mae, _ = self.calculateBaseLine()
-    #     # print(f"Baseline MAE: {overall_baseline_mae}")
-
-    #     # num_features = len(cols)
-    #     # num_samples = len(valid_loader.dataset)  # Total number of samples in the validation dataset
-
-    #     # # Preallocate storage for all attributions
-    #     # all_attributions = np.zeros((num_samples, num_features))  # Shape: (num_samples, num_features)
-
-    #     # self.currentModel.eval()
-    #     # with torch.no_grad():
-    #     #     sample_idx = 0  # Track the global sample index across batches
-
-    #     #     # Iterate over features to compute importance
-    #     #     for feature_idx in tqdm(range(num_features), desc="Computing feature importances"):
-    #     #         # Reset sample index for each feature
-    #     #         sample_idx = 0
-
-    #     #         for X_batch, y_batch in valid_loader:
-    #     #             batch_size = X_batch.size(0)
-    #     #             X_batch, y_batch = X_batch.to(device), y_batch.to(device)
-
-    #     #             # Clone the batch and shuffle the current feature
-    #     #             X_batch_shuffled = X_batch.clone()
-    #     #             shuffle_indices = torch.randperm(batch_size)
-    #     #             X_batch_shuffled[:, :, feature_idx] = X_batch_shuffled[shuffle_indices, :, feature_idx]
-
-    #     #             # Predict with shuffled feature
-    #     #             oof_preds_shuffled = self.currentModel(X_batch_shuffled, return_intermediates=False).squeeze()
-    #     #             attribution_as_mae = torch.abs(oof_preds_shuffled - y_batch).mean(dim=0).cpu().numpy()
-
-    #     #             # Store attributions
-    #     #             end_idx = sample_idx + batch_size
-    #     #             all_attributions[sample_idx:end_idx, feature_idx] = attribution_as_mae[:end_idx - sample_idx]
-
-    #     #             # Update global sample index
-    #     #             sample_idx += batch_size
-
-    #     # print(f"Shape of all_attributions: {all_attributions.shape}")
-
-    #     # # Apply the selected ACTIF variant for aggregation
-    #     # if actif_variant == 'MEAN':
-    #     #     importance = self.calculate_actif_mean(all_attributions)
-    #     # elif actif_variant == 'MEANSTD':
-    #     #     importance = self.calculate_actif_meanstddev(all_attributions)
-    #     # elif actif_variant == 'INV':
-    #     #     importance = self.calculate_actif_inverted_weighted_mean(all_attributions)
-    #     # elif actif_variant == 'PEN':
-    #     #     importance = self.calculate_actif_robust(all_attributions)
-    #     # else:
-    #     #     raise ValueError(f"Unknown ACTIF variant: {actif_variant}")
-
-    #     # # Ensure the importance scores match the number of features
-    #     # if len(importance) != num_features:
-    #     #     raise ValueError(f"Expected {num_features} feature importances, but got {len(importance)}.")
-
-    #     # # Prepare results as a list of dictionaries
-    #     # results = [{'feature': cols[i], 'attribution': importance[i]} for i in range(num_features)]
-
-    #     # aggregated_importances.extend(subject_importances)
-
-    #     # return results
-
-    #     """
-    #     Compute feature importances using feature shuffling and apply ACTIF aggregation.
-
-    #     Args:
-    #         valid_loader: DataLoader for validation data (with sequences).
-    #         actif_variant: The ACTIF variant to use for aggregation ('MEAN', 'meanstddev', 'INV',  'PEN').
-
-    #     Returns:
-    #         List of feature importance based on feature shuffling and the selected ACTIF variant.
-    #     """
-
-    #     self.load_model(self.currentModelName)
-    #     print(f"INFO: Loaded Model: {self.currentModel.__class__.__name__}")
-
-    #     cols = self.selected_features
-    #     device = next(self.currentModel.parameters()).device  # Ensure we are using the correct device
-
-    #     # Calculate the baseline MAE (Mean Absolute Error)
-    #     overall_baseline_mae, _ = self.calculateBaseLine(self.currentModel, valid_loader)
-
-    #     results = [{'feature': 'BASELINE', 'attribution': overall_baseline_mae}]
-    #     self.currentModel.eval()
-
-    #     # Initialize array to accumulate attributions across all samples and features
-    #     num_samples = len(valid_loader.dataset)  # Total number of samples in validation dataset
-    #     all_attributions = np.zeros((num_samples, len(cols)))  # Shape: (samples_size, features)
-
-    #     sample_idx = 0  # To track the global sample index across batches
-
-    #     # Iterate through each feature and compute attributions via shuffling
-    #     for k in tqdm(range(len(cols)), desc="Computing feature importance"):
-    #         # Loop through batches in the validation loader
-    #         for X_batch, y_batch in valid_loader:
-    #             batch_size = X_batch.size(0)
-    #             X_batch, y_batch = X_batch.to(device), y_batch.to(device)
-
-    #             # Shuffle the k-th feature for each sample in the batch
-    #             X_batch_shuffled = X_batch.clone()
-    #             indices = torch.randperm(X_batch.size(0))
-    #             X_batch_shuffled[:, :, k] = X_batch_shuffled[indices, :, k]
-
-    #             # Disable gradient calculation during evaluation
-    #             with torch.no_grad():
-    #                 oof_preds_shuffled = self.currentModel(X_batch_shuffled, return_intermediates=False).squeeze()
-    #                 # Calculate MAE for shuffled predictions
-    #                 attribution_as_mae = torch.mean(torch.abs(oof_preds_shuffled - y_batch), dim=1).cpu().numpy()
-
-    #             # Ensure we don't exceed the size of all_attributions
-    #             end_idx = sample_idx + batch_size
-    #             if end_idx > num_samples:
-    #                 end_idx = num_samples
-
-    #             # Store attributions for the current batch and feature k
-    #             all_attributions[sample_idx:end_idx, k] = attribution_as_mae[:end_idx - sample_idx]
-
-    #             # Update the global sample index
-    #             sample_idx += batch_size
-
-    #     # Check the shape of all_attributions to ensure it's (samples_size, features)
-    #     print(f"Shape of all_attributions: {all_attributions.shape}")
-
-    #     # Apply ACTIF variant for aggregation based on the 'actif_variant' parameter
-    #     if actif_variant == 'MEAN':
-    #         importance = self.calculate_actif_mean(all_attributions)
-    #     elif actif_variant == 'MEANSTD':
-    #         importance = self.calculate_actif_meanstddev(all_attributions)
-    #     elif actif_variant == 'INV':
-    #         importance = self.calculate_actif_inverted_weighted_mean(all_attributions)
-    #     elif actif_variant == 'PEN':
-    #         importance = self.calculate_actif_robust(all_attributions)
-    #     else:
-    #         raise ValueError(f"Unknown ACTIF variant: {actif_variant}")
-
-    #     # Ensure that the importance variable is a list or array with the same length as the number of features
-    #     if not isinstance(importance, np.ndarray):
-    #         importance = np.array(importance)
-
-    #     if importance.shape[0] != len(cols):
-    #         raise ValueError(
-    #             f"ACTIF method returned {importance.shape[0]} importance scores, but {len(cols)} features are expected."
-    #         )
-
-    #     # Prepare the results with the aggregated importance
-    #     results = [{'feature': cols[i], 'attribution': importance[i]} for i in range(len(cols))]
-
-    #     return results
-
-    def feature_shuffling_importances(self, valid_loader, actif_variant):
-        """
-        Compute feature importances using feature shuffling and apply ACTIF aggregation.
-
-        Args:
-            valid_loader: DataLoader for validation data (with sequences).
-            actif_variant: The ACTIF variant to use for aggregation ('MEAN', 'MEANSTD', 'INV', 'PEN').
-
-        Returns:
-            List of feature importance scores based on feature shuffling and the selected ACTIF variant.
-        """
-        # self.load_model(self.currentModelName)
-        print(f"INFO: Loaded Model: {self.currentModel.__class__.__name__}")
-
-        cols = self.selected_features
-
-        # Calculate the baseline MAE (Mean Absolute Error)
-        overall_baseline_mae, _ = self.calculateBaseLine(self.currentModel, valid_loader)
-        print(f"Baseline MAE: {overall_baseline_mae}")
-
-        num_features = len(cols)
-        num_samples = len(valid_loader.dataset)  # Total number of samples in the validation dataset
-
-        # Preallocate storage for all attributions
-        all_attributions = np.zeros((num_samples, num_features))  # Shape: (num_samples, num_features)
-
-        self.currentModel.eval()
-        with torch.no_grad():
-            sample_idx = 0  # Track the global sample index across batches
-
-            # Iterate over features to compute importance
-            for feature_idx in tqdm(range(num_features), desc="Computing feature importances"):
-                # Reset sample index for each feature
-                sample_idx = 0
-
-                for X_batch, y_batch in valid_loader:
-                    batch_size = X_batch.size(0)
-                    X_batch, y_batch = X_batch.to(self.device), y_batch.to(self.device)
-
-                    # Clone the batch and shuffle the current feature
-                    X_batch_shuffled = X_batch.clone()
-                    shuffle_indices = torch.randperm(batch_size)
-                    X_batch_shuffled[:, :, feature_idx] = X_batch_shuffled[shuffle_indices, :, feature_idx]
-
-                    # Predict with shuffled feature
-                    oof_preds_shuffled = self.currentModel(X_batch_shuffled, return_intermediates=False).squeeze()
-                    attribution_as_mae = torch.abs(oof_preds_shuffled - y_batch).mean(dim=0).cpu().numpy()
-
-                    # Store attributions
-                    end_idx = sample_idx + batch_size
-                    all_attributions[sample_idx:end_idx, feature_idx] = attribution_as_mae[:end_idx - sample_idx]
-
-                    # Update global sample index
-                    sample_idx += batch_size
-
-        print(f"Shape of all_attributions: {all_attributions.shape}")
-
-        # Apply the selected ACTIF variant for aggregation
-        if actif_variant == 'MEAN':
-            importance = self.calculate_actif_mean(all_attributions)
-        elif actif_variant == 'MEANSTD':
-            importance = self.calculate_actif_meanstddev(all_attributions)
-        elif actif_variant == 'INV':
-            importance = self.calculate_actif_inverted_weighted_mean(all_attributions)
-        elif actif_variant == 'PEN':
-            importance = self.calculate_actif_robust(all_attributions)
-        else:
-            raise ValueError(f"Unknown ACTIF variant: {actif_variant}")
-
-        # Ensure the importance scores match the number of features
-        if len(importance) != num_features:
-            raise ValueError(f"Expected {num_features} feature importances, but got {len(importance)}.")
-
-        # Prepare results as a list of dictionaries
-        results = [{'feature': cols[i], 'attribution': importance[i]} for i in range(num_features)]
-
-        return results
-
-    '''
        =======================================================================================
        # Utility Functions
        =======================================================================================
@@ -1272,17 +573,6 @@ class FeatureRankingsCreator:
 
     def calculateBaseLine(self, trained_model, valid_loader):
         results = {}
-        # top_features = input_features
-        # feature_count = len(top_features) - 2  # Adjust based on your specific needs
-        # remaining_features = top_features
-        # print(f"START: Evaluating BASELINE Model.")
-
-        # Assign the top features to the trainer
-        # self.currentDataset.current_features = remaining_features
-        # self.currentDataset.load_data()
-        # self.trainer.dataset = self.currentDataset
-
-        # self.trainer.setup()  # feature_count=feature_count, feature_names=remaining_features)
 
         # Perform cross-validation and get the performance results for each run
         full_feature_performance = self.trainer.cross_validate(num_epochs=500)
@@ -1314,75 +604,74 @@ class FeatureRankingsCreator:
 
     ###############################
 
-    def compute_deepactif_ng(self, valid_loader, actif_variant="MEAN"):
-        # Beispielhafter Aufruf:
-        device = "cuda" if torch.cuda.is_available() else "mps" if torch.backends.mps.is_available() else "cpu"
-        # Gehe davon aus, dass trainer.model und selected_features bereits definiert sind.
-        aggregator = DeepACTIFAggregatorV1(model=self.trainer.model, selected_features=self.selected_features,
-                                           device=device)
-        df_importances = aggregator.compute(valid_loader)
-        print("Final aggregated feature importances:")
-        print(df_importances)
-        return df_importances
-
-    def compute_autodeepactif_full(self, valid_loader):
-        # Version 2:
-        # Example Usage:
-        device = "cuda" if torch.cuda.is_available() else "mps" if torch.backends.mps.is_available() else "cpu"
-
-        # Initialize model
-        model = self.trainer.model
-
-        # Run DeepACTIF Analysis on **each sample**
-        analyzer = AutoDeepACTIF_AnalyzerBackprop(model, self.selected_features, device, use_gaussian_spread=True)
-
-        # Um raw Importances mit Zeitinformation zu erhalten, setze return_raw=True:
-        raw_importances = analyzer.analyze(valid_loader, device, return_raw=True)
-
-        # raw_importances: Tensor mit Form (num_samples, timesteps, num_features)
-        raw_np = raw_importances.cpu().detach().numpy()
-
-        # Ermittle den wichtigsten Timestep pro Sample und pro Feature:
-        important_timesteps = analyzer.most_important_timestep(raw_np)
-        print("Wichtigster Timestep pro Sample und Feature:")
-        print(important_timesteps)
-
-        # Aggregiere die raw Importances über die Zeit mittels invers gewichteter Methode:
-        # aggregated_importances = analyzer.aggregate_importance_inv_weighted(raw_np)
-        # Berechnet den Mittelwert über die Zeitachse (axis=1)
-        aggregated_importance = np.mean(raw_np, axis=1)
-        # print("Aggregated importance: ", aggregated_importance.shape)
-
-        # Aggregiere über die Zeitdimension (Achse 1)
-        aggregated_over_time = np.mean(aggregated_importance, axis=1)  # (samples, features)
-
-        # Prepare the results with the aggregated importance
-        results = [{'feature': self.selected_features[i], 'attribution': aggregated_over_time[i]} for i in
-                   range(len(self.selected_features))]
-        return results
-
-    def compute_bayesACTIF(self, valid_loader):
-        # Example Usage:
-        device = "cuda" if torch.cuda.is_available() else "mps" if torch.backends.mps.is_available() else "cpu"
-
-
-        # Version 1:
-        # Annahme: trainer.model und selected_features sind bereits definiert.
-        analyzer = BayesianFeatureImportance(model=self.trainer.model, features=self.selected_features, device=device,
-                                             use_gaussian_spread=True)
-
-        # Bayessche Analyse durchführen:
-        # bayesian_results = analyzer.compute_bayesACTIF(valid_loader)
-        # print("Final Bayesian Results:")
-        # print(bayesian_results)
-        bayesian_results = analyzer.compute_bayesACTIF(valid_loader)
-
-        # Am Ende kannst du die finalen Priorwerte abrufen:
-        final_mu, final_sigma = self.bayes_analyzer.mu_prior, self.bayes_analyzer.sigma_prior
-        print("Final Bayesian mu_prior:", final_mu)
-        print("Final Bayesian sigma_prior:", final_sigma)
-
-        return bayesian_results
+    # def compute_deepactif_ng(self, valid_loader, actif_variant="MEAN"):
+    #     # Beispielhafter Aufruf:
+    #     device = "cuda" if torch.cuda.is_available() else "mps" if torch.backends.mps.is_available() else "cpu"
+    #     # Gehe davon aus, dass trainer.model und selected_features bereits definiert sind.
+    #     aggregator = DeepACTIFAggregatorV1(model=self.trainer.model, selected_features=self.selected_features,
+    #                                        device=device)
+    #     df_importances = aggregator.compute(valid_loader)
+    #     print("Final aggregated feature importances:")
+    #     print(df_importances)
+    #     return df_importances
+    #
+    # def compute_autodeepactif_full(self, valid_loader):
+    #     # Version 2:
+    #     # Example Usage:
+    #     device = "cuda" if torch.cuda.is_available() else "mps" if torch.backends.mps.is_available() else "cpu"
+    #
+    #     # Initialize model
+    #     model = self.trainer.model
+    #
+    #     # Run DeepACTIF Analysis on **each sample**
+    #     analyzer = AutoDeepACTIF_AnalyzerBackprop(model, self.selected_features, device, use_gaussian_spread=True)
+    #
+    #     # Um raw Importances mit Zeitinformation zu erhalten, setze return_raw=True:
+    #     raw_importances = analyzer.analyze(valid_loader, device, return_raw=True)
+    #
+    #     # raw_importances: Tensor mit Form (num_samples, timesteps, num_features)
+    #     raw_np = raw_importances.cpu().detach().numpy()
+    #
+    #     # Ermittle den wichtigsten Timestep pro Sample und pro Feature:
+    #     important_timesteps = analyzer.most_important_timestep(raw_np)
+    #     print("Wichtigster Timestep pro Sample und Feature:")
+    #     print(important_timesteps)
+    #
+    #     # Aggregiere die raw Importances über die Zeit mittels invers gewichteter Methode:
+    #     # aggregated_importances = analyzer.aggregate_importance_inv_weighted(raw_np)
+    #     # Berechnet den Mittelwert über die Zeitachse (axis=1)
+    #     aggregated_importance = np.mean(raw_np, axis=1)
+    #     # print("Aggregated importance: ", aggregated_importance.shape)
+    #
+    #     # Aggregiere über die Zeitdimension (Achse 1)
+    #     aggregated_over_time = np.mean(aggregated_importance, axis=1)  # (samples, features)
+    #
+    #     # Prepare the results with the aggregated importance
+    #     results = [{'feature': self.selected_features[i], 'attribution': aggregated_over_time[i]} for i in
+    #                range(len(self.selected_features))]
+    #     return results
+    #
+    # def compute_bayesACTIF(self, valid_loader):
+    #     # Example Usage:
+    #     device = "cuda" if torch.cuda.is_available() else "mps" if torch.backends.mps.is_available() else "cpu"
+    #
+    #     # Angenommen, `full_dataset` ist dein gesamter Dataset.
+    #     # Wähle zufällig einen Index-Subset (z.B. 10% der Samples) aus allen Subjects:
+    #     # random_samples = len(self.currentDataset.get_random_samples(num_samples=10, subjects=))
+    #     # initial_dataloader = DataLoader(random_samples, batch_size=460, shuffle=True)
+    #
+    #     # Version 1:
+    #     # Annahme: trainer.model und selected_features sind bereits definiert.
+    #
+    #     # Führe die bayessche Analyse durch
+    #     bayesian_results = self.bayes_analyzer.compute_bayesACTIF(valid_loader)
+    #
+    #     # Am Ende kannst du die finalen Priorwerte abrufen:
+    #     final_mu, final_sigma = self.bayes_analyzer.mu_prior, self.bayes_analyzer.sigma_prior
+    #     print("Final Bayesian mu_prior:", final_mu)
+    #     print("Final Bayesian sigma_prior:", final_sigma)
+    #
+    #     return bayesian_results
 
     def convert_aggregated_to_dataframe(self, aggregated_importances, selected_features):
         """
@@ -1405,3 +694,126 @@ class FeatureRankingsCreator:
             "attribution": global_importance
         })
         return df_final
+
+    def compute_deepactif_(self, valid_loader, method):
+
+        if method == '1_DeepACTIF_FULL_OLD':
+            raw_np = self.analyzer.analyze(dataloader=valid_loader)
+
+            # Ensure conversion to NumPy
+            raw_np = raw_np.cpu().numpy()  # Shape: (num_samples, timesteps, num_features)
+
+            # Aggregate over timesteps
+            aggregated_over_time = np.mean(raw_np, axis=1)  # Shape: (num_samples, num_features)
+
+            # Aggregate over samples to get one value per feature
+            aggregated_features = np.mean(aggregated_over_time, axis=0)  # Shape: (num_features,)
+
+            # Prepare the final feature importance results
+            results = [{'feature': self.selected_features[i], 'attribution': aggregated_features[i]}
+                       for i in range(len(self.selected_features))]
+
+        elif method == '2_DeepACTIF_Forward_OLD':
+            results = self.analyzer.analyze(dataloader=valid_loader, device=self.device)
+        elif method == '3_AutoML_DeepACTIF':
+
+            # BACKUP WORKING
+            # # Um raw Importances mit Zeitinformation zu erhalten, setze return_raw=True:
+            # raw_importances = self.analyzer.analyze(valid_loader, self.device, return_raw=True)
+            #
+            # # raw_importances: Tensor mit Form (num_samples, timesteps, num_features)
+            # raw_np = raw_importances.cpu().detach().numpy()
+            #
+            # # SEPARATE: Ermittle den wichtigsten Timestep pro Sample und pro Feature:
+            # important_timesteps = self.analyzer.most_important_timestep(raw_np)
+            # print("Wichtigster Timestep pro Sample und Feature:")
+            # print(important_timesteps)
+            #
+            # # Aggregiere die raw Importances über die Zeit mittels invers gewichteter Methode:
+            # # aggregated_importances = analyzer.aggregate_importance_inv_weighted(raw_np)
+            # # ODER
+            # # Berechnet den Mittelwert über die Zeitachse (axis=1)
+            # aggregated_importance = np.mean(raw_np, axis=1)
+            #
+            # # Aggregiere über die Zeitdimension (Achse 1)
+            # aggregated_over_time = np.mean(aggregated_importance, axis=1)  # (samples, features)
+            #
+            # # Prepare the results with the aggregated importance
+            # results = [{'feature': self.selected_features[i], 'attribution': aggregated_over_time[i]} for i in
+            #            range(len(self.selected_features))]
+
+            # Tidy-Up Version
+            # Um raw Importances mit Zeitinformation zu erhalten, setze return_raw=True:
+            raw_importances = self.analyzer.analyze(valid_loader, self.device, return_raw=True)
+
+            # SEPARATE: Ermittle den wichtigsten Timestep pro Sample und pro Feature:
+            important_timesteps = self.analyzer.most_important_timestep(raw_importances.cpu().detach().numpy())
+            print("Wichtigster Timestep pro Sample und Feature:")
+            print(important_timesteps)
+
+            # Aggregiere die raw Importances über die Zeit mittels invers gewichteter Methode:
+            # INV or NONE: inverted weighted mean or simply mean across time
+            aggregated_importances = self.analyzer.aggregate_importances(raw_importances.cpu().detach().numpy(), method='INV')
+
+            # Aggregiere über die Zeitdimension (Achse 1)
+            aggregated_over_time = np.mean(aggregated_importances, axis=1)  # (samples, features)
+
+            # Prepare the results with the aggregated importance
+            results = [{'feature': self.selected_features[i], 'attribution': aggregated_over_time[i]} for i in
+                       range(len(self.selected_features))]
+
+        elif method == '4_DeepACTIF_AggregatorV1':
+            results = self.analyzer.compute(valid_loader=valid_loader)
+        elif method == '5_BayesianInference':
+            results = self.analyzer.compute_bayesACTIF(valid_loader=valid_loader)
+        elif method == '6_BayesianInference_Optim':
+            # Führe die bayessche Analyse durch
+            results = self.analyzer.compute_bayesACTIF(valid_loader)
+
+            # Am Ende kannst du die finalen Priorwerte abrufen:
+            final_mu, final_sigma = self.analyzer.mu_prior, self.analyzer.sigma_prior
+            print("Final Bayesian mu_prior:", final_mu)
+            print("Final Bayesian sigma_prior:", final_sigma)
+
+        else:
+            print("Method unknwon")
+
+        return results
+
+
+'''
+Varianten:
+1. Single Layer, No backprop, single-Interpolation back ///// ACTIF
+2. Full Model, No backprop, single-Interpolation back   ///// DeepACTIF    
+3. Full Model, Backpropagation by interpolating all layers
+4. 
+5. Full Model. Bayesian Updating, no backprop
+6. FUll Model, Bayesian Updating, InitialDataset priors, weight attributions with uncertainty
+
+1. Feature Importance Calculation Method
+	•   USE BACKPROPAGATION: A_AutoDeepACTIF_AnalyzerBackprop, AutoDeepACTIF_AnalyzerBackprop
+	•	USE ONLY FORWARD PASS:  DeepACTIFAnalyzerForward_2, DeepACTIFAggregatorV1
+	•	USE PROBABILISTIC UPDATES: Bayesian versions (BayesianFeatureImportance_orig, BayesianFeatureImportance) use probabilistic updates instead of raw activations.
+
+2. Layer Hooking Strategy
+	•	Backpropagation versions: Use forward hooks to capture activations from Linear, LSTM, and Pooling layers for backpropagation 
+	    (e.g., AutoDeepACTIF_AnalyzerBackprop).
+	•	Forward-based versions: Use sequential forward passes through the network and directly compute importance (e.g., DeepACTIFAggregatorV1).
+	•	Bayesian versions: Extend this further with Bayesian updates per feature, rather than just summing importances.
+
+3. Temporal Feature Handling
+	•	Backpropagation approaches: Spread importance backwards through pooling and LSTM layers (e.g., backpropagate_max_pooling applies Gaussian spreading).
+	•	Forward-based approaches: Compute per-layer importance and interpolate along features (e.g., DeepACTIFAnalyzerForward_2).
+	•	Bayesian methods: Aggregate feature importance over time using median absolute deviation (MAD) and probabilistic updates.
+
+4. Bayesian Updates & Uncertainty Estimation
+	•	BayesianFeatureImportance_orig: Uses a simple Bayesian update method but doesn’t integrate prior learning well.
+	•	BayesianFeatureImportance: Implements a more robust Bayesian updating rule, initializing with a small dataset to set priors (mu_prior, sigma_prior).
+	•	Introduces adaptive learning rate decay (initial_alpha, decay_rate).
+
+5. Output Format & Interpretation
+	•	Some versions return raw temporal importance per timestep (return_raw=True), allowing further analysis of time dependencies.
+	•	Aggregation methods (DeepACTIFAggregatorV1, AutoDeepACTIF_AnalyzerBackprop) produce SHAP-like outputs mapping importance to feature names.
+	•	Bayesian ACTIF (compute_bayesACTIF) provides uncertainty-aware feature attributions, allowing ranking based on confidence.
+
+'''
